@@ -239,6 +239,7 @@
 #define XRX200_GPHY_FW_ALIGN	(16 * 1024)
 
 struct gswip_hw_info {
+	bool is_external;
 	int max_ports;
 	int cpu_port;
 };
@@ -2017,6 +2018,16 @@ static int gswip_probe(struct platform_device *pdev)
 	if (!priv)
 		return -ENOMEM;
 
+	priv->hw_info = of_device_get_match_data(dev);
+	if (!priv->hw_info)
+		return -EINVAL;
+
+	if (priv->hw_info->is_external)
+	{
+		dev_err(dev, "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
+		return EFAULT;
+	}
+
 	priv->gswip = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(priv->gswip))
 		return PTR_ERR(priv->gswip);
@@ -2028,10 +2039,6 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->mii = devm_platform_ioremap_resource(pdev, 2);
 	if (IS_ERR(priv->mii))
 		return PTR_ERR(priv->mii);
-
-	priv->hw_info = of_device_get_match_data(dev);
-	if (!priv->hw_info)
-		return -EINVAL;
 
 	priv->ds = devm_kzalloc(dev, sizeof(*priv->ds), GFP_KERNEL);
 	if (!priv->ds)
@@ -2122,12 +2129,21 @@ static int gswip_remove(struct platform_device *pdev)
 }
 
 static const struct gswip_hw_info gswip_xrx200 = {
+	.is_external = false,
 	.max_ports = 7,
 	.cpu_port = 6,
 };
 
+static const struct gswip_hw_info gsw_120 = {
+	.is_external = true,
+	.max_ports = 4,
+	.cpu_port = 1,
+	// will also need .ops for newer kernel versions
+};
+
 static const struct of_device_id gswip_of_match[] = {
 	{ .compatible = "lantiq,xrx200-gswip", .data = &gswip_xrx200 },
+	{ .compatible = "maxlinear,gsw120", .data = &gsw_120 },
 	{},
 };
 MODULE_DEVICE_TABLE(of, gswip_of_match);
