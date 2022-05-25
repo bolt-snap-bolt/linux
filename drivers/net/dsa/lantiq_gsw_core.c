@@ -47,6 +47,7 @@
 #include <net/dsa.h>
 #include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
+#include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
 /* TODO WARP-5829: rename most of the "gswip" stuff to "gsw_core" */
@@ -94,6 +95,16 @@ static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 	MIB_DESC(2, 0x0E, "TxGoodBytes"),
 };
 
+static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
+{
+	return priv->ops->read(priv, (priv->gswip + (offset * 4)));
+}
+
+static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
+{
+	priv->ops->write(priv, val, (priv->gswip + (offset * 4)));
+}
+
 static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 			      u32 offset)
 {
@@ -104,6 +115,27 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	gswip_switch_w(priv, val, offset);
 }
 
+static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
+				  u32 cleared)
+{
+	/* TODO WARP-5829: re-write this function */
+	//u32 val;
+
+	//return readx_poll_timeout(priv->ops->read, (priv->gswip + (offset * 4)),
+	//			  val, (val & cleared) == 0, 20, 50000);
+	return 0;
+}
+
+static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
+{
+	return priv->ops->read(priv, (priv->mdio + (offset * 4)));
+}
+
+static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
+{
+	priv->ops->write(priv, val, (priv->mdio + (offset * 4)));
+}
+
 static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
 			    u32 offset)
 {
@@ -112,6 +144,16 @@ static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	val &= ~(clear);
 	val |= set;
 	gswip_slave_mdio_w(priv, val, offset);
+}
+
+static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
+{
+	return priv->ops->read(priv, (priv->mii + (offset * 4)));
+}
+
+static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
+{
+	priv->ops->write(priv, val, (priv->mii + (offset * 4)));
 }
 
 static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -1723,7 +1765,7 @@ remove_gphy:
 	return err;
 }
 
-static int gsw_core_probe(struct platform_device *pdev)
+int gsw_core_probe(struct platform_device *pdev)
 {
 	/* TODO WARP-5829:
 	 * - determine how much of this should be in gsw_platform_probe() instead
@@ -1743,12 +1785,6 @@ static int gsw_core_probe(struct platform_device *pdev)
 	priv->hw_info = of_device_get_match_data(dev);
 	if (!priv->hw_info)
 		return -EINVAL;
-
-	if (priv->hw_info->is_external)
-	{
-		dev_err(dev, "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
-		return EFAULT;
-	}
 
 	priv->gswip = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(priv->gswip))
@@ -1829,7 +1865,7 @@ put_mdio_node:
 }
 EXPORT_SYMBOL(gsw_core_probe);
 
-static int gsw_core_remove(struct gswip_priv *priv)
+int gsw_core_remove(struct gswip_priv *priv)
 {
 	int i;
 

@@ -25,6 +25,9 @@
  * between all LAN ports by default.
  */
 
+#ifndef __LANTIQ_GSW_H
+#define __LANTIQ_GSW_H
+
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -44,8 +47,6 @@
 #include <linux/reset.h>
 #include <net/dsa.h>
 #include <dt-bindings/mips/lantiq_rcu_gphy.h>
-
-#include "lantiq_pce.h"
 
 /* GSWIP MDIO Registers */
 #define GSWIP_MDIO_GLOB			0x00
@@ -266,6 +267,7 @@ struct gswip_priv {
 	__iomem void *mdio;
 	__iomem void *mii;
 	const struct gsw_hw_info *hw_info;
+	const struct gsw_ops *ops;
 	const struct xway_gphy_match_data *gphy_fw_name_cfg;
 	struct dsa_switch *ds;
 	struct device *dev;
@@ -274,6 +276,11 @@ struct gswip_priv {
 	int num_gphy_fw;
 	struct gswip_gphy_fw *gphy_fw;
 	u32 port_vlan_filter;
+};
+
+struct gsw_ops {
+	u32 (*read)(struct gswip_priv *priv, void *address);
+	void (*write)(struct gswip_priv *priv, u32 val, void *address);
 };
 
 struct gswip_pce_table_entry {
@@ -296,12 +303,7 @@ struct gswip_rmon_cnt_desc {
 
 #define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
 
-MODULE_FIRMWARE("lantiq/xrx300_phy11g_a21.bin");
-MODULE_FIRMWARE("lantiq/xrx300_phy22f_a21.bin");
-MODULE_FIRMWARE("lantiq/xrx200_phy11g_a14.bin");
-MODULE_FIRMWARE("lantiq/xrx200_phy11g_a22.bin");
-MODULE_FIRMWARE("lantiq/xrx200_phy22f_a14.bin");
-MODULE_FIRMWARE("lantiq/xrx200_phy22f_a22.bin");
-MODULE_AUTHOR("Hauke Mehrtens <hauke@hauke-m.de>");
-MODULE_DESCRIPTION("Lantiq / Intel GSWIP driver");
-MODULE_LICENSE("GPL v2");
+int gsw_core_probe(struct platform_device *pdev);
+int gsw_core_remove(struct gswip_priv *priv);
+
+#endif

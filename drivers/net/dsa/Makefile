@@ -5,9 +5,9 @@ obj-$(CONFIG_NET_DSA_LOOP)	+= dsa_loop.o
 ifdef CONFIG_NET_DSA_LOOP
 obj-$(CONFIG_FIXED_PHY)		+= dsa_loop_bdinfo.o
 endif
-obj-$(CONFIG_NET_DSA_LANTIQ_GSWIP) += lantiq_gsw_core.o
-obj-$(CONFIG_NET_DSA_LANTIQ_GSWIP_PLATFORM) += lantiq_gsw_platform.o
-obj-$(CONFIG_NET_DSA_LANTIQ_GSWIP_MDIO) += lantiq_gsw_mdio.o
+obj-$(CONFIG_NET_DSA_LANTIQ_GSW) += lantiq_gsw_core.o
+obj-$(CONFIG_NET_DSA_LANTIQ_GSW_PLATFORM) += lantiq_gsw_platform.o
+obj-$(CONFIG_NET_DSA_LANTIQ_GSW_MDIO) += lantiq_gsw_mdio.o
 obj-$(CONFIG_NET_DSA_MT7530)	+= mt7530.o
 obj-$(CONFIG_NET_DSA_MV88E6060) += mv88e6060.o
 obj-$(CONFIG_NET_DSA_QCA8K)	+= qca8k.o

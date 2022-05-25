@@ -29,46 +29,27 @@
 #include <net/dsa.h>
 #include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
+#include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
-static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
+static u32 gsw_platform_read(struct gswip_priv *priv, void *address)
 {
-	return __raw_readl(priv->gswip + (offset * 4));
+	/* TODO WARP-5829: finalize this function */
+	(void*)priv;
+	return __raw_readl(address);
 }
 
-static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
+static void gsw_platform_write(struct gswip_priv *priv, u32 val, void *address)
 {
-	__raw_writel(val, priv->gswip + (offset * 4));
+	/* TODO WARP-5829: finalize this function */
+	(void*)priv;
+	__raw_writel(val, address);
 }
 
-static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
-				  u32 cleared)
-{
-	u32 val;
-
-	return readx_poll_timeout(__raw_readl, priv->gswip + (offset * 4), val,
-				  (val & cleared) == 0, 20, 50000);
-}
-
-static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
-{
-	return __raw_readl(priv->mdio + (offset * 4));
-}
-
-static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
-{
-	__raw_writel(val, priv->mdio + (offset * 4));
-}
-
-static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
-{
-	return __raw_readl(priv->mii + (offset * 4));
-}
-
-static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
-{
-	__raw_writel(val, priv->mii + (offset * 4));
-}
+static const struct gsw_ops gsw_platform_ops = {
+	.read = gsw_platform_read,
+	.write = gsw_platform_write,
+};
 
 /*-------------------------------------------------------------------------*/
 

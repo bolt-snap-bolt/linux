@@ -32,65 +32,45 @@
 #include <net/dsa.h>
 #include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
+#include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
-static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
+static u32 gsw_mdio_read(struct gswip_priv *priv, void *address)
 {
 	/* TODO WARP-5829: write this function */
-	return EIO;
+	return 0;
 }
 
-static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
-{
-	/* TODO WARP-5829: write this function */
-}
-
-static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
-				  u32 cleared)
-{
-	/* TODO WARP-5829: write this function */
-	return EIO;
-}
-
-static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
-{
-	/* TODO WARP-5829: write this function */
-	return EIO;
-}
-
-static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
+static void gsw_mdio_write(struct gswip_priv *priv, u32 val, void *address)
 {
 	/* TODO WARP-5829: write this function */
 }
 
-static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
-{
-	/* TODO WARP-5829: write this function */
-	return EIO;
-}
-
-static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
-{
-	/* TODO WARP-5829: write this function */
-}
+static const struct gsw_ops gsw_mdio_ops = {
+	.read = gsw_mdio_read,
+	.write = gsw_mdio_write,
+};
 
 /*-------------------------------------------------------------------------*/
 
-static int gswip_mdio_probe(struct mdio_device *pmdiodev)
+static int gsw_mdio_probe(struct mdio_device *pmdiodev)
 {
 	/* TODO WARP-5829: write this function */
-	dev_err(dev, "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
+	printk("!RCC: GSW MDIO probe func invoked.\n");
+	dev_err(&(pmdiodev->dev), "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
+
 	return EFAULT;
 }
 
-static int gsw_mdio_remove(struct mdio_device *pmdiodev)
+static void gsw_mdio_remove(struct mdio_device *pmdiodev)
 {
 	/* TODO WARP-5829: verify nothing else needs to be done in this function */
-	return gsw_core_remove(mdiodev_get_drvdata(pmdiodev));
+	gsw_core_remove((struct gswip_priv*)mdiodev_get_drvdata(pmdiodev));
 }
 
 /*-------------------------------------------------------------------------*/
 
+/* MaxLinear GSW120 & GSW125 */
 static const struct gsw_hw_info gsw_120 = {
 	/* TODO WARP-5828: Determine what these values should be */
 	.max_ports = 4,
@@ -101,8 +81,7 @@ static const struct gsw_hw_info gsw_120 = {
 };
 
 static const struct of_device_id gsw_mdio_of_match[] = {
-	{ .compatible = "maxlinear,gsw120", .data = &gsw_120 },
-	{ .compatible = "maxlinear,gsw125", .data = &gsw_120 },
+	{ .compatible = "maxlinear,gsw12x", .data = &gsw_120 },
 	{},
 };
 
