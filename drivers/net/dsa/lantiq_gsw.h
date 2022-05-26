@@ -5,6 +5,8 @@
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (C) 2022 Reliable Controls Corporation,
+ * 						Harley Sims <hsims@reliablecontrols.com>
  *
  * The VLAN and bridge model the GSWIP hardware uses does not directly
  * matches the model DSA uses.
@@ -279,8 +281,10 @@ struct gswip_priv {
 };
 
 struct gsw_ops {
-	u32 (*read)(struct gswip_priv *priv, void *address);
-	void (*write)(struct gswip_priv *priv, u32 val, void *address);
+	u32 (*read)(struct gswip_priv *priv, void *addr);
+	u32 (*read_timeout)(struct gswip_priv *priv, void *addr, \
+					u32 cleared, u32 sleep_us, u32 timeout_us);
+	void (*write)(struct gswip_priv *priv, void *addr, u32 val);
 };
 
 struct gswip_pce_table_entry {

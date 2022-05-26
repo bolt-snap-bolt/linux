@@ -5,7 +5,8 @@
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
- * Copyright (C) 2022 Reliable Controls Corporation, Harley Sims <hsims@reliablecontrols.com>
+ * Copyright (C) 2022 Reliable Controls Corporation,
+ * 						Harley Sims <hsims@reliablecontrols.com>
  */
 
 /* TODO WARP-5829: determine how many of these includes I can delete */
@@ -32,22 +33,36 @@
 #include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
-static u32 gsw_platform_read(struct gswip_priv *priv, void *address)
+struct gsw_platform {
+	struct platform_device *platform_dev;
+	struct gswip_priv common;
+};
+
+static u32 gsw_platform_read(struct gswip_priv *priv, void *addr)
 {
-	/* TODO WARP-5829: finalize this function */
 	(void*)priv;
-	return __raw_readl(address);
+	return __raw_readl(addr);
 }
 
-static void gsw_platform_write(struct gswip_priv *priv, u32 val, void *address)
+static u32 gsw_platform_read_timeout(struct gswip_priv *priv, void *addr, 
+								u32 cleared, u32 sleep_us, u32 timeout_us)
 {
-	/* TODO WARP-5829: finalize this function */
+	u32 val;
+	
 	(void*)priv;
-	__raw_writel(val, address);
+	return readx_poll_timeout(__raw_readl, addr, val,
+						(val & cleared) == 0, sleep_us, timeout_us);
+}
+
+static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
+{
+	(void*)priv;
+	__raw_writel(val, addr);
 }
 
 static const struct gsw_ops gsw_platform_ops = {
 	.read = gsw_platform_read,
+	.read_timeout = gsw_platform_read_timeout,
 	.write = gsw_platform_write,
 };
 

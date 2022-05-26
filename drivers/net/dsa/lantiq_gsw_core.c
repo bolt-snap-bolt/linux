@@ -5,7 +5,8 @@
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
- * Copyright (C) 2022 Reliable Controls Corporation, Harley Sims <hsims@reliablecontrols.com>
+ * Copyright (C) 2022 Reliable Controls Corporation,
+ * 					Harley Sims <hsims@reliablecontrols.com>
  *
  * The VLAN and bridge model the GSWIP hardware uses does not directly
  * matches the model DSA uses.
@@ -102,7 +103,7 @@ static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
 
 static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, val, (priv->gswip + (offset * 4)));
+	priv->ops->write(priv, (priv->gswip + (offset * 4)), val);
 }
 
 static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -118,12 +119,8 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
 				  u32 cleared)
 {
-	/* TODO WARP-5829: re-write this function */
-	//u32 val;
-
-	//return readx_poll_timeout(priv->ops->read, (priv->gswip + (offset * 4)),
-	//			  val, (val & cleared) == 0, 20, 50000);
-	return 0;
+	return priv->ops->read_timeout(priv, (priv->gswip + (offset * 4)), \
+								cleared, 20, 50000);
 }
 
 static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
@@ -133,7 +130,7 @@ static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
 
 static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, val, (priv->mdio + (offset * 4)));
+	priv->ops->write(priv, (priv->mdio + (offset * 4)), val);
 }
 
 static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -153,7 +150,7 @@ static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
 
 static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, val, (priv->mii + (offset * 4)));
+	priv->ops->write(priv, (priv->mii + (offset * 4)), val);
 }
 
 static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,
