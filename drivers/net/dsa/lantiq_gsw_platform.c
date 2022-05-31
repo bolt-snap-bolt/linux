@@ -70,15 +70,40 @@ static const struct gsw_ops gsw_platform_ops = {
 
 static int gsw_platform_probe(struct platform_device *pdev)
 {
-	/* TODO WARP-5829:
-	 * - move platform-specific parts of gsw_core_probe() out to here
-	 */
-	return gsw_core_probe(pdev);
+	struct device *dev = &(pdev->dev);
+	struct gsw_platform *platform_data;
+	int err;
+
+	platform_data = devm_kzalloc(dev, sizeof(*platform_data), GFP_KERNEL);
+	if (!platform_data)
+		return -ENOMEM;
+
+	platform_data->common.gswip = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(platform_data->common.gswip))
+		return PTR_ERR(platform_data->common.gswip);
+
+	platform_data->common.mdio = devm_platform_ioremap_resource(pdev, 1);
+	if (IS_ERR(platform_data->common.mdio))
+		return PTR_ERR(platform_data->common.mdio);
+
+	platform_data->common.mii = devm_platform_ioremap_resource(pdev, 2);
+	if (IS_ERR(platform_data->common.mii))
+		return PTR_ERR(platform_data->common.mii);
+
+	err = gsw_core_probe(&platform_data->common, dev);
+	if (err)
+		return err;
+
+	platform_set_drvdata(pdev, platform_data);
+
+	return 0;
 }
 
 static int gsw_platform_remove(struct platform_device *pdev)
 {
-	return gsw_core_remove(platform_get_drvdata(pdev));
+	struct gsw_platform *platform_data = platform_get_drvdata(pdev);
+
+	return gsw_core_remove(&platform_data->common);
 }
 
 /*-------------------------------------------------------------------------*/
