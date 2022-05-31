@@ -44,12 +44,12 @@ struct gsw_mdio {
 	struct gswip_priv common;
 };
 
-static u32 gsw_mdio_read_actual(struct mdio_device *mdio, u32 reg)
+static inline u32 gsw_mdio_read_actual(struct mdio_device *mdio, u32 reg)
 {
 	return mdio->bus->read(mdio->bus, mdio->addr, reg);
 }
 
-static void gsw_mdio_write_actual(struct mdio_device *mdio, u32 reg, u32 val)
+static inline void gsw_mdio_write_actual(struct mdio_device *mdio, u32 reg, u32 val)
 {
 	mdio->bus->write(mdio->bus, mdio->addr, reg, val);
 }
