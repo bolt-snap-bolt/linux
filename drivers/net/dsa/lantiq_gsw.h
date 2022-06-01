@@ -30,26 +30,6 @@
 #ifndef __LANTIQ_GSW_H
 #define __LANTIQ_GSW_H
 
-#include <linux/clk.h>
-#include <linux/delay.h>
-#include <linux/etherdevice.h>
-#include <linux/firmware.h>
-#include <linux/if_bridge.h>
-#include <linux/if_vlan.h>
-#include <linux/iopoll.h>
-#include <linux/mfd/syscon.h>
-#include <linux/module.h>
-#include <linux/of_mdio.h>
-#include <linux/of_net.h>
-#include <linux/of_platform.h>
-#include <linux/phy.h>
-#include <linux/phylink.h>
-#include <linux/platform_device.h>
-#include <linux/regmap.h>
-#include <linux/reset.h>
-#include <net/dsa.h>
-#include <dt-bindings/mips/lantiq_rcu_gphy.h>
-
 /* GSWIP MDIO Registers */
 #define GSWIP_MDIO_GLOB			0x00
 #define  GSWIP_MDIO_GLOB_ENABLE		BIT(15)
@@ -283,7 +263,7 @@ struct gswip_priv {
 struct gsw_ops {
 	u32 (*read)(struct gswip_priv *priv, void *addr);
 	u32 (*read_timeout)(struct gswip_priv *priv, void *addr, \
-					u32 cleared, u32 sleep_us, u32 timeout_us);
+				u32 cleared, u32 sleep_us, u32 timeout_us);
 	void (*write)(struct gswip_priv *priv, void *addr, u32 val);
 };
 
