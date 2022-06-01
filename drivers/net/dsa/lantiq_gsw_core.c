@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Lantiq / Intel GSWIP switch driver for VRX200 SoCs
+ * Lantiq / Intel / MaxLinear GSW switch driver
  *
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
+ * Copyright (C) 2022 Reliable Controls Corporation, Harley Sims <hsims@reliablecontrols.com>
  *
  * The VLAN and bridge model the GSWIP hardware uses does not directly
  * matches the model DSA uses.
@@ -25,6 +26,7 @@
  * between all LAN ports by default.
  */
 
+/* TODO WARP-5829: determine how many of these includes I can delete */
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -45,257 +47,10 @@
 #include <net/dsa.h>
 #include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
+#include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
-/* GSWIP MDIO Registers */
-#define GSWIP_MDIO_GLOB			0x00
-#define  GSWIP_MDIO_GLOB_ENABLE		BIT(15)
-#define GSWIP_MDIO_CTRL			0x08
-#define  GSWIP_MDIO_CTRL_BUSY		BIT(12)
-#define  GSWIP_MDIO_CTRL_RD		BIT(11)
-#define  GSWIP_MDIO_CTRL_WR		BIT(10)
-#define  GSWIP_MDIO_CTRL_PHYAD_MASK	0x1f
-#define  GSWIP_MDIO_CTRL_PHYAD_SHIFT	5
-#define  GSWIP_MDIO_CTRL_REGAD_MASK	0x1f
-#define GSWIP_MDIO_READ			0x09
-#define GSWIP_MDIO_WRITE		0x0A
-#define GSWIP_MDIO_MDC_CFG0		0x0B
-#define GSWIP_MDIO_MDC_CFG1		0x0C
-#define GSWIP_MDIO_PHYp(p)		(0x15 - (p))
-#define  GSWIP_MDIO_PHY_LINK_MASK	0x6000
-#define  GSWIP_MDIO_PHY_LINK_AUTO	0x0000
-#define  GSWIP_MDIO_PHY_LINK_DOWN	0x4000
-#define  GSWIP_MDIO_PHY_LINK_UP		0x2000
-#define  GSWIP_MDIO_PHY_SPEED_MASK	0x1800
-#define  GSWIP_MDIO_PHY_SPEED_AUTO	0x1800
-#define  GSWIP_MDIO_PHY_SPEED_M10	0x0000
-#define  GSWIP_MDIO_PHY_SPEED_M100	0x0800
-#define  GSWIP_MDIO_PHY_SPEED_G1	0x1000
-#define  GSWIP_MDIO_PHY_FDUP_MASK	0x0600
-#define  GSWIP_MDIO_PHY_FDUP_AUTO	0x0000
-#define  GSWIP_MDIO_PHY_FDUP_EN		0x0200
-#define  GSWIP_MDIO_PHY_FDUP_DIS	0x0600
-#define  GSWIP_MDIO_PHY_FCONTX_MASK	0x0180
-#define  GSWIP_MDIO_PHY_FCONTX_AUTO	0x0000
-#define  GSWIP_MDIO_PHY_FCONTX_EN	0x0100
-#define  GSWIP_MDIO_PHY_FCONTX_DIS	0x0180
-#define  GSWIP_MDIO_PHY_FCONRX_MASK	0x0060
-#define  GSWIP_MDIO_PHY_FCONRX_AUTO	0x0000
-#define  GSWIP_MDIO_PHY_FCONRX_EN	0x0020
-#define  GSWIP_MDIO_PHY_FCONRX_DIS	0x0060
-#define  GSWIP_MDIO_PHY_ADDR_MASK	0x001f
-#define  GSWIP_MDIO_PHY_MASK		(GSWIP_MDIO_PHY_ADDR_MASK | \
-					 GSWIP_MDIO_PHY_FCONRX_MASK | \
-					 GSWIP_MDIO_PHY_FCONTX_MASK | \
-					 GSWIP_MDIO_PHY_LINK_MASK | \
-					 GSWIP_MDIO_PHY_SPEED_MASK | \
-					 GSWIP_MDIO_PHY_FDUP_MASK)
-
-/* GSWIP MII Registers */
-#define GSWIP_MII_CFGp(p)		(0x2 * (p))
-#define  GSWIP_MII_CFG_RESET		BIT(15)
-#define  GSWIP_MII_CFG_EN		BIT(14)
-#define  GSWIP_MII_CFG_ISOLATE		BIT(13)
-#define  GSWIP_MII_CFG_LDCLKDIS		BIT(12)
-#define  GSWIP_MII_CFG_RGMII_IBS	BIT(8)
-#define  GSWIP_MII_CFG_RMII_CLK		BIT(7)
-#define  GSWIP_MII_CFG_MODE_MIIP	0x0
-#define  GSWIP_MII_CFG_MODE_MIIM	0x1
-#define  GSWIP_MII_CFG_MODE_RMIIP	0x2
-#define  GSWIP_MII_CFG_MODE_RMIIM	0x3
-#define  GSWIP_MII_CFG_MODE_RGMII	0x4
-#define  GSWIP_MII_CFG_MODE_MASK	0xf
-#define  GSWIP_MII_CFG_RATE_M2P5	0x00
-#define  GSWIP_MII_CFG_RATE_M25	0x10
-#define  GSWIP_MII_CFG_RATE_M125	0x20
-#define  GSWIP_MII_CFG_RATE_M50	0x30
-#define  GSWIP_MII_CFG_RATE_AUTO	0x40
-#define  GSWIP_MII_CFG_RATE_MASK	0x70
-#define GSWIP_MII_PCDU0			0x01
-#define GSWIP_MII_PCDU1			0x03
-#define GSWIP_MII_PCDU5			0x05
-#define  GSWIP_MII_PCDU_TXDLY_MASK	GENMASK(2, 0)
-#define  GSWIP_MII_PCDU_RXDLY_MASK	GENMASK(9, 7)
-
-/* GSWIP Core Registers */
-#define GSWIP_SWRES			0x000
-#define  GSWIP_SWRES_R1			BIT(1)	/* GSWIP Software reset */
-#define  GSWIP_SWRES_R0			BIT(0)	/* GSWIP Hardware reset */
-#define GSWIP_VERSION			0x013
-#define  GSWIP_VERSION_REV_SHIFT	0
-#define  GSWIP_VERSION_REV_MASK		GENMASK(7, 0)
-#define  GSWIP_VERSION_MOD_SHIFT	8
-#define  GSWIP_VERSION_MOD_MASK		GENMASK(15, 8)
-#define   GSWIP_VERSION_2_0		0x100
-#define   GSWIP_VERSION_2_1		0x021
-#define   GSWIP_VERSION_2_2		0x122
-#define   GSWIP_VERSION_2_2_ETC		0x022
-
-#define GSWIP_BM_RAM_VAL(x)		(0x043 - (x))
-#define GSWIP_BM_RAM_ADDR		0x044
-#define GSWIP_BM_RAM_CTRL		0x045
-#define  GSWIP_BM_RAM_CTRL_BAS		BIT(15)
-#define  GSWIP_BM_RAM_CTRL_OPMOD	BIT(5)
-#define  GSWIP_BM_RAM_CTRL_ADDR_MASK	GENMASK(4, 0)
-#define GSWIP_BM_QUEUE_GCTRL		0x04A
-#define  GSWIP_BM_QUEUE_GCTRL_GL_MOD	BIT(10)
-/* buffer management Port Configuration Register */
-#define GSWIP_BM_PCFGp(p)		(0x080 + ((p) * 2))
-#define  GSWIP_BM_PCFG_CNTEN		BIT(0)	/* RMON Counter Enable */
-#define  GSWIP_BM_PCFG_IGCNT		BIT(1)	/* Ingres Special Tag RMON count */
-/* buffer management Port Control Register */
-#define GSWIP_BM_RMON_CTRLp(p)		(0x81 + ((p) * 2))
-#define  GSWIP_BM_CTRL_RMON_RAM1_RES	BIT(0)	/* Software Reset for RMON RAM 1 */
-#define  GSWIP_BM_CTRL_RMON_RAM2_RES	BIT(1)	/* Software Reset for RMON RAM 2 */
-
-/* PCE */
-#define GSWIP_PCE_TBL_KEY(x)		(0x447 - (x))
-#define GSWIP_PCE_TBL_MASK		0x448
-#define GSWIP_PCE_TBL_VAL(x)		(0x44D - (x))
-#define GSWIP_PCE_TBL_ADDR		0x44E
-#define GSWIP_PCE_TBL_CTRL		0x44F
-#define  GSWIP_PCE_TBL_CTRL_BAS		BIT(15)
-#define  GSWIP_PCE_TBL_CTRL_TYPE	BIT(13)
-#define  GSWIP_PCE_TBL_CTRL_VLD		BIT(12)
-#define  GSWIP_PCE_TBL_CTRL_KEYFORM	BIT(11)
-#define  GSWIP_PCE_TBL_CTRL_GMAP_MASK	GENMASK(10, 7)
-#define  GSWIP_PCE_TBL_CTRL_OPMOD_MASK	GENMASK(6, 5)
-#define  GSWIP_PCE_TBL_CTRL_OPMOD_ADRD	0x00
-#define  GSWIP_PCE_TBL_CTRL_OPMOD_ADWR	0x20
-#define  GSWIP_PCE_TBL_CTRL_OPMOD_KSRD	0x40
-#define  GSWIP_PCE_TBL_CTRL_OPMOD_KSWR	0x60
-#define  GSWIP_PCE_TBL_CTRL_ADDR_MASK	GENMASK(4, 0)
-#define GSWIP_PCE_PMAP1			0x453	/* Monitoring port map */
-#define GSWIP_PCE_PMAP2			0x454	/* Default Multicast port map */
-#define GSWIP_PCE_PMAP3			0x455	/* Default Unknown Unicast port map */
-#define GSWIP_PCE_GCTRL_0		0x456
-#define  GSWIP_PCE_GCTRL_0_MTFL		BIT(0)  /* MAC Table Flushing */
-#define  GSWIP_PCE_GCTRL_0_MC_VALID	BIT(3)
-#define  GSWIP_PCE_GCTRL_0_VLAN		BIT(14) /* VLAN aware Switching */
-#define GSWIP_PCE_GCTRL_1		0x457
-#define  GSWIP_PCE_GCTRL_1_MAC_GLOCK	BIT(2)	/* MAC Address table lock */
-#define  GSWIP_PCE_GCTRL_1_MAC_GLOCK_MOD	BIT(3) /* Mac address table lock forwarding mode */
-#define GSWIP_PCE_PCTRL_0p(p)		(0x480 + ((p) * 0xA))
-#define  GSWIP_PCE_PCTRL_0_TVM		BIT(5)	/* Transparent VLAN mode */
-#define  GSWIP_PCE_PCTRL_0_VREP		BIT(6)	/* VLAN Replace Mode */
-#define  GSWIP_PCE_PCTRL_0_INGRESS	BIT(11)	/* Accept special tag in ingress */
-#define  GSWIP_PCE_PCTRL_0_PSTATE_LISTEN	0x0
-#define  GSWIP_PCE_PCTRL_0_PSTATE_RX		0x1
-#define  GSWIP_PCE_PCTRL_0_PSTATE_TX		0x2
-#define  GSWIP_PCE_PCTRL_0_PSTATE_LEARNING	0x3
-#define  GSWIP_PCE_PCTRL_0_PSTATE_FORWARDING	0x7
-#define  GSWIP_PCE_PCTRL_0_PSTATE_MASK	GENMASK(2, 0)
-#define GSWIP_PCE_VCTRL(p)		(0x485 + ((p) * 0xA))
-#define  GSWIP_PCE_VCTRL_UVR		BIT(0)	/* Unknown VLAN Rule */
-#define  GSWIP_PCE_VCTRL_VIMR		BIT(3)	/* VLAN Ingress Member violation rule */
-#define  GSWIP_PCE_VCTRL_VEMR		BIT(4)	/* VLAN Egress Member violation rule */
-#define  GSWIP_PCE_VCTRL_VSR		BIT(5)	/* VLAN Security */
-#define  GSWIP_PCE_VCTRL_VID0		BIT(6)	/* Priority Tagged Rule */
-#define GSWIP_PCE_DEFPVID(p)		(0x486 + ((p) * 0xA))
-
-#define GSWIP_MAC_FLEN			0x8C5
-#define GSWIP_MAC_CTRL_0p(p)		(0x903 + ((p) * 0xC))
-#define  GSWIP_MAC_CTRL_0_PADEN		BIT(8)
-#define  GSWIP_MAC_CTRL_0_FCS_EN	BIT(7)
-#define  GSWIP_MAC_CTRL_0_FCON_MASK	0x0070
-#define  GSWIP_MAC_CTRL_0_FCON_AUTO	0x0000
-#define  GSWIP_MAC_CTRL_0_FCON_RX	0x0010
-#define  GSWIP_MAC_CTRL_0_FCON_TX	0x0020
-#define  GSWIP_MAC_CTRL_0_FCON_RXTX	0x0030
-#define  GSWIP_MAC_CTRL_0_FCON_NONE	0x0040
-#define  GSWIP_MAC_CTRL_0_FDUP_MASK	0x000C
-#define  GSWIP_MAC_CTRL_0_FDUP_AUTO	0x0000
-#define  GSWIP_MAC_CTRL_0_FDUP_EN	0x0004
-#define  GSWIP_MAC_CTRL_0_FDUP_DIS	0x000C
-#define  GSWIP_MAC_CTRL_0_GMII_MASK	0x0003
-#define  GSWIP_MAC_CTRL_0_GMII_AUTO	0x0000
-#define  GSWIP_MAC_CTRL_0_GMII_MII	0x0001
-#define  GSWIP_MAC_CTRL_0_GMII_RGMII	0x0002
-#define GSWIP_MAC_CTRL_2p(p)		(0x905 + ((p) * 0xC))
-#define GSWIP_MAC_CTRL_2_MLEN		BIT(3) /* Maximum Untagged Frame Lnegth */
-
-/* Ethernet Switch Fetch DMA Port Control Register */
-#define GSWIP_FDMA_PCTRLp(p)		(0xA80 + ((p) * 0x6))
-#define  GSWIP_FDMA_PCTRL_EN		BIT(0)	/* FDMA Port Enable */
-#define  GSWIP_FDMA_PCTRL_STEN		BIT(1)	/* Special Tag Insertion Enable */
-#define  GSWIP_FDMA_PCTRL_VLANMOD_MASK	GENMASK(4, 3)	/* VLAN Modification Control */
-#define  GSWIP_FDMA_PCTRL_VLANMOD_SHIFT	3	/* VLAN Modification Control */
-#define  GSWIP_FDMA_PCTRL_VLANMOD_DIS	(0x0 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
-#define  GSWIP_FDMA_PCTRL_VLANMOD_PRIO	(0x1 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
-#define  GSWIP_FDMA_PCTRL_VLANMOD_ID	(0x2 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
-#define  GSWIP_FDMA_PCTRL_VLANMOD_BOTH	(0x3 << GSWIP_FDMA_PCTRL_VLANMOD_SHIFT)
-
-/* Ethernet Switch Store DMA Port Control Register */
-#define GSWIP_SDMA_PCTRLp(p)		(0xBC0 + ((p) * 0x6))
-#define  GSWIP_SDMA_PCTRL_EN		BIT(0)	/* SDMA Port Enable */
-#define  GSWIP_SDMA_PCTRL_FCEN		BIT(1)	/* Flow Control Enable */
-#define  GSWIP_SDMA_PCTRL_PAUFWD	BIT(3)	/* Pause Frame Forwarding */
-
-#define GSWIP_TABLE_ACTIVE_VLAN		0x01
-#define GSWIP_TABLE_VLAN_MAPPING	0x02
-#define GSWIP_TABLE_MAC_BRIDGE		0x0b
-#define  GSWIP_TABLE_MAC_BRIDGE_STATIC	0x01	/* Static not, aging entry */
-
-#define XRX200_GPHY_FW_ALIGN	(16 * 1024)
-
-struct gswip_hw_info {
-	bool is_external;
-	int max_ports;
-	int cpu_port;
-};
-
-struct xway_gphy_match_data {
-	char *fe_firmware_name;
-	char *ge_firmware_name;
-};
-
-struct gswip_gphy_fw {
-	struct clk *clk_gate;
-	struct reset_control *reset;
-	u32 fw_addr_offset;
-	char *fw_name;
-};
-
-struct gswip_vlan {
-	struct net_device *bridge;
-	u16 vid;
-	u8 fid;
-};
-
-struct gswip_priv {
-	__iomem void *gswip;
-	__iomem void *mdio;
-	__iomem void *mii;
-	const struct gswip_hw_info *hw_info;
-	const struct xway_gphy_match_data *gphy_fw_name_cfg;
-	struct dsa_switch *ds;
-	struct device *dev;
-	struct regmap *rcu_regmap;
-	struct gswip_vlan vlans[64];
-	int num_gphy_fw;
-	struct gswip_gphy_fw *gphy_fw;
-	u32 port_vlan_filter;
-};
-
-struct gswip_pce_table_entry {
-	u16 index;      // PCE_TBL_ADDR.ADDR = pData->table_index
-	u16 table;      // PCE_TBL_CTRL.ADDR = pData->table
-	u16 key[8];
-	u16 val[5];
-	u16 mask;
-	u8 gmap;
-	bool type;
-	bool valid;
-	bool key_mode;
-};
-
-struct gswip_rmon_cnt_desc {
-	unsigned int size;
-	unsigned int offset;
-	const char *name;
-};
-
-#define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
+/* TODO WARP-5829: rename most of the "gswip" stuff to "gsw_core" */
 
 static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 	/** Receive Packet Count (only packets that are accepted and not discarded). */
@@ -342,12 +97,12 @@ static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 
 static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
 {
-	return __raw_readl(priv->gswip + (offset * 4));
+	return priv->ops->read(priv, (priv->gswip + (offset * 4)));
 }
 
 static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	__raw_writel(val, priv->gswip + (offset * 4));
+	priv->ops->write(priv, val, (priv->gswip + (offset * 4)));
 }
 
 static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -363,40 +118,42 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
 				  u32 cleared)
 {
-	u32 val;
+	/* TODO WARP-5829: re-write this function */
+	//u32 val;
 
-	return readx_poll_timeout(__raw_readl, priv->gswip + (offset * 4), val,
-				  (val & cleared) == 0, 20, 50000);
+	//return readx_poll_timeout(priv->ops->read, (priv->gswip + (offset * 4)),
+	//			  val, (val & cleared) == 0, 20, 50000);
+	return 0;
 }
 
-static u32 gswip_mdio_r(struct gswip_priv *priv, u32 offset)
+static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
 {
-	return __raw_readl(priv->mdio + (offset * 4));
+	return priv->ops->read(priv, (priv->mdio + (offset * 4)));
 }
 
-static void gswip_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
+static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	__raw_writel(val, priv->mdio + (offset * 4));
+	priv->ops->write(priv, val, (priv->mdio + (offset * 4)));
 }
 
-static void gswip_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
+static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
 			    u32 offset)
 {
-	u32 val = gswip_mdio_r(priv, offset);
+	u32 val = gswip_slave_mdio_r(priv, offset);
 
 	val &= ~(clear);
 	val |= set;
-	gswip_mdio_w(priv, val, offset);
+	gswip_slave_mdio_w(priv, val, offset);
 }
 
 static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
 {
-	return __raw_readl(priv->mii + (offset * 4));
+	return priv->ops->read(priv, (priv->mii + (offset * 4)));
 }
 
 static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	__raw_writel(val, priv->mii + (offset * 4));
+	priv->ops->write(priv, val, (priv->mii + (offset * 4)));
 }
 
 static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -433,12 +190,12 @@ static void gswip_mii_mask_pcdu(struct gswip_priv *priv, u32 clear, u32 set,
 	}
 }
 
-static int gswip_mdio_poll(struct gswip_priv *priv)
+static int gswip_slave_mdio_poll(struct gswip_priv *priv)
 {
 	int cnt = 100;
 
 	while (likely(cnt--)) {
-		u32 ctrl = gswip_mdio_r(priv, GSWIP_MDIO_CTRL);
+		u32 ctrl = gswip_slave_mdio_r(priv, GSWIP_MDIO_CTRL);
 
 		if ((ctrl & GSWIP_MDIO_CTRL_BUSY) == 0)
 			return 0;
@@ -448,19 +205,19 @@ static int gswip_mdio_poll(struct gswip_priv *priv)
 	return -ETIMEDOUT;
 }
 
-static int gswip_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
+static int gswip_slave_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 {
 	struct gswip_priv *priv = bus->priv;
 	int err;
 
-	err = gswip_mdio_poll(priv);
+	err = gswip_slave_mdio_poll(priv);
 	if (err) {
 		dev_err(&bus->dev, "waiting for MDIO bus busy timed out\n");
 		return err;
 	}
 
-	gswip_mdio_w(priv, val, GSWIP_MDIO_WRITE);
-	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
+	gswip_slave_mdio_w(priv, val, GSWIP_MDIO_WRITE);
+	gswip_slave_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_WR |
 		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
 		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
 		GSWIP_MDIO_CTRL);
@@ -468,32 +225,32 @@ static int gswip_mdio_wr(struct mii_bus *bus, int addr, int reg, u16 val)
 	return 0;
 }
 
-static int gswip_mdio_rd(struct mii_bus *bus, int addr, int reg)
+static int gswip_slave_mdio_rd(struct mii_bus *bus, int addr, int reg)
 {
 	struct gswip_priv *priv = bus->priv;
 	int err;
 
-	err = gswip_mdio_poll(priv);
+	err = gswip_slave_mdio_poll(priv);
 	if (err) {
 		dev_err(&bus->dev, "waiting for MDIO bus busy timed out\n");
 		return err;
 	}
 
-	gswip_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
+	gswip_slave_mdio_w(priv, GSWIP_MDIO_CTRL_BUSY | GSWIP_MDIO_CTRL_RD |
 		((addr & GSWIP_MDIO_CTRL_PHYAD_MASK) << GSWIP_MDIO_CTRL_PHYAD_SHIFT) |
 		(reg & GSWIP_MDIO_CTRL_REGAD_MASK),
 		GSWIP_MDIO_CTRL);
 
-	err = gswip_mdio_poll(priv);
+	err = gswip_slave_mdio_poll(priv);
 	if (err) {
 		dev_err(&bus->dev, "waiting for MDIO bus busy timed out\n");
 		return err;
 	}
 
-	return gswip_mdio_r(priv, GSWIP_MDIO_READ);
+	return gswip_slave_mdio_r(priv, GSWIP_MDIO_READ);
 }
 
-static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
+static int gswip_slave_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 {
 	struct dsa_switch *ds = priv->ds;
 	int err;
@@ -503,8 +260,8 @@ static int gswip_mdio(struct gswip_priv *priv, struct device_node *mdio_np)
 		return -ENOMEM;
 
 	ds->slave_mii_bus->priv = priv;
-	ds->slave_mii_bus->read = gswip_mdio_rd;
-	ds->slave_mii_bus->write = gswip_mdio_wr;
+	ds->slave_mii_bus->read = gswip_slave_mdio_rd;
+	ds->slave_mii_bus->write = gswip_slave_mdio_wr;
 	ds->slave_mii_bus->name = "lantiq,xrx200-mdio";
 	snprintf(ds->slave_mii_bus->id, MII_BUS_ID_SIZE, "%s-mii",
 		 dev_name(priv->dev));
@@ -685,7 +442,7 @@ static int gswip_port_enable(struct dsa_switch *ds, int port,
 		if (phydev)
 			mdio_phy = phydev->mdio.addr & GSWIP_MDIO_PHY_ADDR_MASK;
 
-		gswip_mdio_mask(priv, GSWIP_MDIO_PHY_ADDR_MASK, mdio_phy,
+		gswip_slave_mdio_mask(priv, GSWIP_MDIO_PHY_ADDR_MASK, mdio_phy,
 				GSWIP_MDIO_PHYp(port));
 	}
 
@@ -809,7 +566,7 @@ static int gswip_setup(struct dsa_switch *ds)
 	}
 
 	/* enable Switch */
-	gswip_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
+	gswip_slave_mdio_mask(priv, 0, GSWIP_MDIO_GLOB_ENABLE, GSWIP_MDIO_GLOB);
 
 	err = gswip_pce_load_microcode(priv);
 	if (err) {
@@ -838,10 +595,10 @@ static int gswip_setup(struct dsa_switch *ds)
 	 * Testing shows that when PHY auto polling is disabled these problems
 	 * go away.
 	 */
-	gswip_mdio_w(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
+	gswip_slave_mdio_w(priv, 0x0, GSWIP_MDIO_MDC_CFG0);
 
 	/* Configure the MDIO Clock 2.5 MHz */
-	gswip_mdio_mask(priv, 0xff, 0x09, GSWIP_MDIO_MDC_CFG1);
+	gswip_slave_mdio_mask(priv, 0xff, 0x09, GSWIP_MDIO_MDC_CFG1);
 
 	/* Disable the xMII interface and clear it's isolation bit */
 	for (i = 0; i < priv->hw_info->max_ports; i++)
@@ -1514,7 +1271,7 @@ static void gswip_port_set_link(struct gswip_priv *priv, int port, bool link)
 	else
 		mdio_phy = GSWIP_MDIO_PHY_LINK_DOWN;
 
-	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_LINK_MASK, mdio_phy,
+	gswip_slave_mdio_mask(priv, GSWIP_MDIO_PHY_LINK_MASK, mdio_phy,
 			GSWIP_MDIO_PHYp(port));
 }
 
@@ -1555,7 +1312,7 @@ static void gswip_port_set_speed(struct gswip_priv *priv, int port, int speed,
 		break;
 	}
 
-	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_SPEED_MASK, mdio_phy,
+	gswip_slave_mdio_mask(priv, GSWIP_MDIO_PHY_SPEED_MASK, mdio_phy,
 			GSWIP_MDIO_PHYp(port));
 	gswip_mii_mask_cfg(priv, GSWIP_MII_CFG_RATE_MASK, mii_cfg, port);
 	gswip_switch_mask(priv, GSWIP_MAC_CTRL_0_GMII_MASK, mac_ctrl_0,
@@ -1576,7 +1333,7 @@ static void gswip_port_set_duplex(struct gswip_priv *priv, int port, int duplex)
 
 	gswip_switch_mask(priv, GSWIP_MAC_CTRL_0_FDUP_MASK, mac_ctrl_0,
 			  GSWIP_MAC_CTRL_0p(port));
-	gswip_mdio_mask(priv, GSWIP_MDIO_PHY_FDUP_MASK, mdio_phy,
+	gswip_slave_mdio_mask(priv, GSWIP_MDIO_PHY_FDUP_MASK, mdio_phy,
 			GSWIP_MDIO_PHYp(port));
 }
 
@@ -1605,7 +1362,7 @@ static void gswip_port_set_pause(struct gswip_priv *priv, int port,
 
 	gswip_switch_mask(priv, GSWIP_MAC_CTRL_0_FCON_MASK,
 			  mac_ctrl_0, GSWIP_MAC_CTRL_0p(port));
-	gswip_mdio_mask(priv,
+	gswip_slave_mdio_mask(priv,
 			GSWIP_MDIO_PHY_FCONTX_MASK |
 			GSWIP_MDIO_PHY_FCONRX_MASK,
 			mdio_phy, GSWIP_MDIO_PHYp(port));
@@ -1788,6 +1545,9 @@ static const struct dsa_switch_ops gswip_switch_ops = {
 	.get_sset_count		= gswip_get_sset_count,
 };
 
+/* TODO WARP-5829:
+ * determine how much of this gphy stuff can be relugated to the platform file
+ */
 static const struct xway_gphy_match_data xrx200a1x_gphy_data = {
 	.fe_firmware_name = "lantiq/xrx200_phy22f_a14.bin",
 	.ge_firmware_name = "lantiq/xrx200_phy11g_a14.bin",
@@ -2005,8 +1765,12 @@ remove_gphy:
 	return err;
 }
 
-static int gswip_probe(struct platform_device *pdev)
+int gsw_core_probe(struct platform_device *pdev)
 {
+	/* TODO WARP-5829:
+	 * - determine how much of this should be in gsw_platform_probe() instead
+	 * - have gsw_mdio_probe() and gsw_platform_probe() call this gracefully
+	 */
 	struct gswip_priv *priv;
 	struct device_node *mdio_np, *gphy_fw_np;
 	struct device *dev = &pdev->dev;
@@ -2021,12 +1785,6 @@ static int gswip_probe(struct platform_device *pdev)
 	priv->hw_info = of_device_get_match_data(dev);
 	if (!priv->hw_info)
 		return -EINVAL;
-
-	if (priv->hw_info->is_external)
-	{
-		dev_err(dev, "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
-		return EFAULT;
-	}
 
 	priv->gswip = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(priv->gswip))
@@ -2065,7 +1823,7 @@ static int gswip_probe(struct platform_device *pdev)
 	/* bring up the mdio bus */
 	mdio_np = of_get_compatible_child(dev->of_node, "lantiq,xrx200-mdio");
 	if (mdio_np) {
-		err = gswip_mdio(priv, mdio_np);
+		err = gswip_slave_mdio(priv, mdio_np);
 		if (err) {
 			dev_err(dev, "mdio probe failed\n");
 			goto put_mdio_node;
@@ -2092,7 +1850,7 @@ static int gswip_probe(struct platform_device *pdev)
 	return 0;
 
 disable_switch:
-	gswip_mdio_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
+	gswip_slave_mdio_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
 	dsa_unregister_switch(priv->ds);
 mdio_bus:
 	if (mdio_np) {
@@ -2105,14 +1863,14 @@ put_mdio_node:
 		gswip_gphy_fw_remove(priv, &priv->gphy_fw[i]);
 	return err;
 }
+EXPORT_SYMBOL(gsw_core_probe);
 
-static int gswip_remove(struct platform_device *pdev)
+int gsw_core_remove(struct gswip_priv *priv)
 {
-	struct gswip_priv *priv = platform_get_drvdata(pdev);
 	int i;
 
 	/* disable the switch */
-	gswip_mdio_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
+	gswip_slave_mdio_mask(priv, GSWIP_MDIO_GLOB_ENABLE, 0, GSWIP_MDIO_GLOB);
 
 	dsa_unregister_switch(priv->ds);
 
@@ -2127,37 +1885,7 @@ static int gswip_remove(struct platform_device *pdev)
 
 	return 0;
 }
-
-static const struct gswip_hw_info gswip_xrx200 = {
-	.is_external = false,
-	.max_ports = 7,
-	.cpu_port = 6,
-};
-
-static const struct gswip_hw_info gsw_120 = {
-	.is_external = true,
-	.max_ports = 4,
-	.cpu_port = 1,
-	// will also need .ops for newer kernel versions
-};
-
-static const struct of_device_id gswip_of_match[] = {
-	{ .compatible = "lantiq,xrx200-gswip", .data = &gswip_xrx200 },
-	{ .compatible = "maxlinear,gsw120", .data = &gsw_120 },
-	{},
-};
-MODULE_DEVICE_TABLE(of, gswip_of_match);
-
-static struct platform_driver gswip_driver = {
-	.probe = gswip_probe,
-	.remove = gswip_remove,
-	.driver = {
-		.name = "gswip",
-		.of_match_table = gswip_of_match,
-	},
-};
-
-module_platform_driver(gswip_driver);
+EXPORT_SYMBOL(gsw_core_remove);
 
 MODULE_FIRMWARE("lantiq/xrx300_phy11g_a21.bin");
 MODULE_FIRMWARE("lantiq/xrx300_phy22f_a21.bin");
@@ -2166,5 +1894,5 @@ MODULE_FIRMWARE("lantiq/xrx200_phy11g_a22.bin");
 MODULE_FIRMWARE("lantiq/xrx200_phy22f_a14.bin");
 MODULE_FIRMWARE("lantiq/xrx200_phy22f_a22.bin");
 MODULE_AUTHOR("Hauke Mehrtens <hauke@hauke-m.de>");
-MODULE_DESCRIPTION("Lantiq / Intel GSWIP driver");
+MODULE_DESCRIPTION("Core driver for the MaxLinear / Lantiq / Intel GSW switches");
 MODULE_LICENSE("GPL v2");
