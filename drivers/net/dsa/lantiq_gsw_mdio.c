@@ -15,6 +15,8 @@
 
 #include "lantiq_gsw.h"
 
+#define RUN_MDIO_COMM_TESTS (1)
+
 #define NUM_ACCESSIBLE_REGS (30)
 #define TARGET_BASE_ADDRESS_REG (31)
 
@@ -119,15 +121,122 @@ static const struct gsw_ops gsw_mdio_ops = {
 
 /*-------------------------------------------------------------------------*/
 
-static u32 gsw_mdio_test_comms(struct gswip_priv *priv)
+#if RUN_MDIO_COMM_TESTS
+static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
-	u32 failed_test = 0;
+	struct mdio_device *mdio;
+	void *reg_addr;
+	u32 i, val, tbar, expected_tbar;
 
-	/* Put test code here */
+	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 
-exit:
-	return failed_test;
+	// basic TBAR r/w validation
+	gsw_mdio_write_tbar(mdio, 0xABC);
+	if (0xABC != gsw_mdio_read_tbar(mdio)) {
+		printk("!RCC: TBAR r/w failed");
+		return false;
+	}
+
+	// check TBAR only writes when necessary
+	for (i = 0; i < 0xFFFF; i++) // 
+	{
+		tbar = gsw_mdio_check_write_tbar(mdio, i);
+		expected_tbar = TARGET_BASE_ADDRESS_REG * (i / TARGET_BASE_ADDRESS_REG);
+		if (tbar != expected_tbar) {
+			printk("!RCC: TBAR sweep up failed: i:%d, tbar:%d, expected:%d", \
+				i, tbar, expected_tbar);
+			return false;
+		}
+	}
+
+	for (i = 0xFFFF; i > 0; i--)
+	{
+		tbar = gsw_mdio_check_write_tbar(mdio, i);
+		expected_tbar = TARGET_BASE_ADDRESS_REG * (i / TARGET_BASE_ADDRESS_REG);
+		if (tbar != (TARGET_BASE_ADDRESS_REG * \
+				(i / TARGET_BASE_ADDRESS_REG))) {
+			printk("!RCC: TBAR sweep down failed: i:%d, tbar:%d, expected:%d", \
+				i, tbar, expected_tbar);
+			return false;
+		}
+	}
+
+	// read some actual registers
+	// these 4 sequential registers should all have reset values of 0x0000
+	reg_addr = (void*)0xF380; // GPIO_OUT, GPIO_IN, GPIO_DIR, GPIO_ALTSEL0
+	for (i = 0; i < 4; i++)
+	{
+		val = gsw_mdio_read(priv, reg_addr);
+		if (val) {
+			printk("!RCC: read failure: read %d from 0x%x", \
+				val, (u32)reg_addr);
+			return false;
+		}
+		reg_addr++;
+	}
+	// these 3 sequential registers should all have reset values of 0x7FFF
+	reg_addr = (void*)0xF395; // GPIO2_OD, GPIO2_PUDSEL, GPIO_PUDEN
+	for (i = 0; i < 3; i++)
+	{
+		val = gsw_mdio_read(priv, reg_addr);
+		if (val != 0x7FFF) {
+			printk("!RCC: read failure: read %d from 0x%x", \
+				val, (u32)reg_addr);
+			return false;
+		}
+		reg_addr++;
+	}
+
+	// do the same read tests using the poll timeout function
+	// these 4 sequential registers should all have reset values of 0x0000
+	reg_addr = (void*)0xF380; // GPIO_OUT, GPIO_IN, GPIO_DIR, GPIO_ALTSEL0
+	for (i = 0; i < 4; i++)
+	{
+		// use same arguments as core driver
+		val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
+		if (val) {
+			printk("!RCC: read_timeout failure: read %d from 0x%x", \
+				val, (u32)reg_addr);
+			return false;
+		}
+		reg_addr++;
+	}
+	// these 3 sequential registers should all have reset values of 0x7FFF
+	reg_addr = (void*)0xF395; // GPIO2_OD, GPIO2_PUDSEL, GPIO_PUDEN
+	for (i = 0; i < 3; i++)
+	{
+		// use same arguments as core driver
+		val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
+		if (val != 0x7FFF) {
+			printk("!RCC: read_timeout failure: read %d from 0x%x", \
+				val, (u32)reg_addr);
+			return false;
+		}
+		reg_addr++;
+	}
+
+	// write a register
+	reg_addr = (void*)0xF396; // GPIO2_PUDSEL
+	for (i = 0; i < 0x7FFF; i++) // top bit is reserved
+	{
+		gsw_mdio_write(priv, reg_addr, i);
+		val = gsw_mdio_read(priv, reg_addr);
+		if (i != val) {
+			printk("!RCC: write failure: read:%d, expected:%d", \
+				val, i);
+			return false;
+		}
+		gsw_mdio_write(priv, reg_addr, 0); //write zero each time to clear
+	}
+
+	/* TODO WARP-5828:
+	 * - Verify reads/writes targeting PHYs on the GSW internal MDIO bus work as expected
+	 * - Sub-in register defines for hard-coded addresses above
+	 */
+
+	return true;
 }
+#endif
 
 static int gsw_mdio_probe(struct mdio_device *mdiodev)
 {
@@ -145,13 +254,12 @@ static int gsw_mdio_probe(struct mdio_device *mdiodev)
 
 	dev_set_drvdata(dev, mdio_data);
 
-	/* Run some R/W tests */
-	u32 result = gsw_mdio_test_comms(&mdio_data->common);
-	if (!result) {
-		printk("!RCC: GSW comm test passed!");
-	} else {
-		printk("!RCC: GSW comm test failed. 1st failure: %d", result);
-	}
+#if RUN_MDIO_COMM_TESTS
+	if (gsw_mdio_comm_tests(&mdio_data->common))
+		printk("!RCC: GSW comm test PASS");
+	else
+		printk("!RCC: GSW comm test FAILURE");
+#endif
 
 	return 0;
 }
