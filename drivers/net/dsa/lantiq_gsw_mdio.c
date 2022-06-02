@@ -141,20 +141,20 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	for (i = 0; i < 0xFFFF; i++) // 
 	{
 		tbar = gsw_mdio_check_write_tbar(mdio, i);
-		expected_tbar = TARGET_BASE_ADDRESS_REG * (i / TARGET_BASE_ADDRESS_REG);
+		expected_tbar = TARGET_BASE_ADDRESS_REG * \
+					(i / TARGET_BASE_ADDRESS_REG);
 		if (tbar != expected_tbar) {
 			printk("!RCC: TBAR sweep up failed: i:%d, tbar:%d, expected:%d", \
 				i, tbar, expected_tbar);
 			return false;
 		}
 	}
-
+	gsw_mdio_write_tbar(mdio, 0);
 	for (i = 0xFFFF; i > 0; i--)
 	{
 		tbar = gsw_mdio_check_write_tbar(mdio, i);
-		expected_tbar = TARGET_BASE_ADDRESS_REG * (i / TARGET_BASE_ADDRESS_REG);
-		if (tbar != (TARGET_BASE_ADDRESS_REG * \
-				(i / TARGET_BASE_ADDRESS_REG))) {
+		// we are sweeping down, so tbar will change every time
+		if (tbar != i) {
 			printk("!RCC: TBAR sweep down failed: i:%d, tbar:%d, expected:%d", \
 				i, tbar, expected_tbar);
 			return false;
@@ -162,57 +162,38 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	}
 
 	// read some actual registers
-	// these 4 sequential registers should all have reset values of 0x0000
-	reg_addr = (void*)0xF380; // GPIO_OUT, GPIO_IN, GPIO_DIR, GPIO_ALTSEL0
-	for (i = 0; i < 4; i++)
-	{
-		val = gsw_mdio_read(priv, reg_addr);
-		if (val) {
-			printk("!RCC: read failure: read %d from 0x%x", \
-				val, (u32)reg_addr);
-			return false;
-		}
-		reg_addr++;
+	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
+	val = gsw_mdio_read(priv, reg_addr);
+	if (val) {
+		printk("!RCC: read failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
 	}
-	// these 3 sequential registers should all have reset values of 0x7FFF
-	reg_addr = (void*)0xF395; // GPIO2_OD, GPIO2_PUDSEL, GPIO_PUDEN
-	for (i = 0; i < 3; i++)
-	{
-		val = gsw_mdio_read(priv, reg_addr);
-		if (val != 0x7FFF) {
-			printk("!RCC: read failure: read %d from 0x%x", \
-				val, (u32)reg_addr);
-			return false;
-		}
-		reg_addr++;
+	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
+	val = gsw_mdio_read(priv, reg_addr);
+	if (val != 0x7FFF) {
+		printk("!RCC: read failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
 	}
 
 	// do the same read tests using the poll timeout function
 	// these 4 sequential registers should all have reset values of 0x0000
-	reg_addr = (void*)0xF380; // GPIO_OUT, GPIO_IN, GPIO_DIR, GPIO_ALTSEL0
-	for (i = 0; i < 4; i++)
-	{
-		// use same arguments as core driver
-		val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
-		if (val) {
-			printk("!RCC: read_timeout failure: read %d from 0x%x", \
-				val, (u32)reg_addr);
-			return false;
-		}
-		reg_addr++;
+	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
+	// use same arguments as core driver
+	val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
+	if (val) {
+		printk("!RCC: read_timeout failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
 	}
-	// these 3 sequential registers should all have reset values of 0x7FFF
-	reg_addr = (void*)0xF395; // GPIO2_OD, GPIO2_PUDSEL, GPIO_PUDEN
-	for (i = 0; i < 3; i++)
-	{
-		// use same arguments as core driver
-		val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
-		if (val != 0x7FFF) {
-			printk("!RCC: read_timeout failure: read %d from 0x%x", \
-				val, (u32)reg_addr);
-			return false;
-		}
-		reg_addr++;
+	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
+	// use same arguments as core driver
+	val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
+	if (val != 0x7FFF) {
+		printk("!RCC: read_timeout failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
 	}
 
 	// write a register
@@ -226,7 +207,7 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 				val, i);
 			return false;
 		}
-		gsw_mdio_write(priv, reg_addr, 0); //write zero each time to clear
+		gsw_mdio_write(priv, reg_addr, 0); //write zero to clear
 	}
 
 	/* TODO WARP-5828:
