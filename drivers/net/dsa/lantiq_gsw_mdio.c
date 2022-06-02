@@ -248,11 +248,14 @@ static int gsw_mdio_probe(struct mdio_device *mdiodev)
 	if (!mdio_data)
 		return -ENOMEM;
 
+	mdio_data->common.ops = &gsw_mdio_ops;
+	
+	mdio_data->mdio_dev = mdiodev;
+	dev_set_drvdata(dev, mdio_data);
+
 	err = gsw_core_probe(&mdio_data->common, dev);
 	if (err)
 		return err;
-
-	dev_set_drvdata(dev, mdio_data);
 
 #if RUN_MDIO_COMM_TESTS
 	if (gsw_mdio_comm_tests(&mdio_data->common))

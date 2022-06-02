@@ -61,6 +61,10 @@ static int gsw_platform_probe(struct platform_device *pdev)
 	if (!platform_data)
 		return -ENOMEM;
 
+	platform_data->platform_dev = pdev;
+	platform_set_drvdata(pdev, platform_data);
+
+	platform_data->common.ops = &gsw_platform_ops;
 	platform_data->common.gswip = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(platform_data->common.gswip))
 		return PTR_ERR(platform_data->common.gswip);
@@ -76,8 +80,6 @@ static int gsw_platform_probe(struct platform_device *pdev)
 	err = gsw_core_probe(&platform_data->common, dev);
 	if (err)
 		return err;
-
-	platform_set_drvdata(pdev, platform_data);
 
 	return 0;
 }
