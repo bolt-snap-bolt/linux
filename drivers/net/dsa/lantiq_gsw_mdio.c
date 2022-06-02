@@ -8,7 +8,8 @@
  * Copyright (C) 2010 Lantiq Deutschland
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
- * Copyright (C) 2022 Reliable Controls Corporation, Harley Sims <hsims@reliablecontrols.com>
+ * Copyright (C) 2022 Reliable Controls Corporation,
+ * 						Harley Sims <hsims@reliablecontrols.com>
  */
 
 /* TODO WARP-5829: determine how many of these includes I can delete */
@@ -35,19 +36,103 @@
 #include "lantiq_gsw.h"
 #include "lantiq_pce.h"
 
-static u32 gsw_mdio_read(struct gswip_priv *priv, void *address)
+#define NUM_ACCESSIBLE_REGS (30)
+#define TARGET_BASE_ADDRESS_REG (31)
+
+struct gsw_mdio {
+	struct mdio_device *mdio_dev;
+	struct gswip_priv common;
+};
+
+static inline u32 gsw_mdio_read_actual(struct mdio_device *mdio, u32 reg)
 {
-	/* TODO WARP-5829: write this function */
-	return 0;
+	return mdio->bus->read(mdio->bus, mdio->addr, reg);
 }
 
-static void gsw_mdio_write(struct gswip_priv *priv, u32 val, void *address)
+static inline void gsw_mdio_write_actual(struct mdio_device *mdio, u32 reg, u32 val)
 {
-	/* TODO WARP-5829: write this function */
+	mdio->bus->write(mdio->bus, mdio->addr, reg, val);
+}
+
+static inline u32 gsw_mdio_read_tbar(struct mdio_device *mdio)
+{
+	return gsw_mdio_read_actual(mdio, TARGET_BASE_ADDRESS_REG);
+}
+
+static inline void gsw_mdio_write_tbar(struct mdio_device *mdio, u32 reg_addr)
+{
+	gsw_mdio_write_actual(mdio, TARGET_BASE_ADDRESS_REG, reg_addr);
+}
+
+static u32 gsw_mdio_check_write_tbar(struct mdio_device *mdio, u32 reg_addr)
+{
+	u32 tbar = gsw_mdio_read_tbar(mdio);
+
+	/* MDIO slave interface uses an indirect addressing scheme that allows
+	 * access to NUM_ACCESSIBLE_REGS registers at a time. The Target Base
+	 * Address Register (TBAR) is used to set a base offset, then MDIO
+	 * registers (0-30) are used to access internal addresses of (TBAR + 0-30)
+	 */
+	if ((reg_addr < tbar) || (reg_addr > (tbar + NUM_ACCESSIBLE_REGS))) {
+			gsw_mdio_write_tbar(mdio, reg_addr);
+			tbar = reg_addr;
+	}
+
+	return tbar;
+}
+
+static u32 gsw_mdio_read(struct gswip_priv *priv, void *addr)
+{
+	struct mdio_device *mdio;
+	u32 reg_addr, tbar, val;
+
+	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
+	reg_addr = (u32)addr;
+
+	mutex_lock(&mdio->bus->mdio_lock);
+	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+	val = gsw_mdio_read_actual(mdio, (reg_addr - tbar));
+	mutex_unlock(&mdio->bus->mdio_lock);
+
+	return val;
+}
+
+static u32 gsw_mdio_read_timeout(struct gswip_priv *priv, void *addr,
+								u32 cleared, u32 sleep_us, u32 timeout_us)
+{
+	struct mdio_device *mdio;
+	u32 retval, reg_addr, tbar, val;
+
+	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
+	reg_addr = (u32)addr;
+
+	mutex_lock(&mdio->bus->mdio_lock);
+	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+	retval = read_poll_timeout(gsw_mdio_read_actual, val, \
+				(val & cleared) == 0, sleep_us, timeout_us, false, \
+				mdio, (reg_addr - tbar));
+	mutex_unlock(&mdio->bus->mdio_lock);
+
+	return retval;
+}
+
+static void gsw_mdio_write(struct gswip_priv *priv, void *addr, u32 val)
+{
+	struct mdio_device *mdio;
+	u32 reg_addr, tbar;
+
+	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
+	reg_addr = (u32)addr;
+
+	mutex_lock(&mdio->bus->mdio_lock);
+	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+	gsw_mdio_write_actual(mdio, (reg_addr - tbar), val);
+	mutex_unlock(&mdio->bus->mdio_lock);
 }
 
 static const struct gsw_ops gsw_mdio_ops = {
 	.read = gsw_mdio_read,
+	.read_timeout = gsw_mdio_read_timeout,
 	.write = gsw_mdio_write,
 };
 
