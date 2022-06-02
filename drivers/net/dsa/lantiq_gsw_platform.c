@@ -23,7 +23,7 @@ struct gsw_platform {
 
 static u32 gsw_platform_read(struct gswip_priv *priv, void *addr)
 {
-	(void*)priv;
+	(void)priv;
 	return __raw_readl(addr);
 }
 
@@ -32,14 +32,14 @@ static u32 gsw_platform_read_timeout(struct gswip_priv *priv, void *addr,
 {
 	u32 val;
 	
-	(void*)priv;
+	(void)priv;
 	return readx_poll_timeout(__raw_readl, addr, val,
 				(val & cleared) == 0, sleep_us, timeout_us);
 }
 
 static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
 {
-	(void*)priv;
+	(void)priv;
 	__raw_writel(val, addr);
 }
 
