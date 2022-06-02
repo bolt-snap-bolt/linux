@@ -27,7 +27,7 @@ static u32 gsw_platform_read(struct gswip_priv *priv, void *addr)
 	return __raw_readl(addr);
 }
 
-static u32 gsw_platform_read_timeout(struct gswip_priv *priv, void *addr, 
+static int gsw_platform_poll_timeout(struct gswip_priv *priv, void *addr, 
 				u32 cleared, u32 sleep_us, u32 timeout_us)
 {
 	u32 val;
@@ -45,8 +45,8 @@ static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
 
 static const struct gsw_ops gsw_platform_ops = {
 	.read = gsw_platform_read,
-	.read_timeout = gsw_platform_read_timeout,
 	.write = gsw_platform_write,
+	.poll_timeout = gsw_platform_poll_timeout,
 };
 
 /*-------------------------------------------------------------------------*/

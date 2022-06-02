@@ -80,11 +80,12 @@ static u32 gsw_mdio_read(struct gswip_priv *priv, void *addr)
 	return val;
 }
 
-static u32 gsw_mdio_read_timeout(struct gswip_priv *priv, void *addr,
+static int gsw_mdio_poll_timeout(struct gswip_priv *priv, void *addr,
 				u32 cleared, u32 sleep_us, u32 timeout_us)
 {
 	struct mdio_device *mdio;
-	u32 retval, reg_addr, tbar, val;
+	u32 reg_addr, tbar, val;
+	int retval;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 	reg_addr = (u32)addr;
@@ -115,8 +116,8 @@ static void gsw_mdio_write(struct gswip_priv *priv, void *addr, u32 val)
 
 static const struct gsw_ops gsw_mdio_ops = {
 	.read = gsw_mdio_read,
-	.read_timeout = gsw_mdio_read_timeout,
 	.write = gsw_mdio_write,
+	.poll_timeout = gsw_mdio_poll_timeout,
 };
 
 /*-------------------------------------------------------------------------*/
@@ -126,7 +127,7 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
 	struct mdio_device *mdio;
 	void *reg_addr;
-	u32 i, val, tbar, expected_tbar;
+	u32 i, val, tbar, expected_tbar, mask;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 
@@ -177,22 +178,31 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		return false;
 	}
 
-	// do the same read tests using the poll timeout function
-	// these 4 sequential registers should all have reset values of 0x0000
+	// do some read tests using the poll timeout function
 	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
-	// use same arguments as core driver
-	val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
-	if (val) {
-		printk("!RCC: read_timeout failure: read %d from 0x%x", \
-			val, (u32)reg_addr);
+	mask = 0xFFFF;
+	// use same timing arguments as core driver
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val) { // expect success (val = 0)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
 		return false;
 	}
+	
 	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
-	// use same arguments as core driver
-	val = gsw_mdio_read_timeout(priv, reg_addr, false, 20, 50000);
-	if (val != 0x7FFF) {
-		printk("!RCC: read_timeout failure: read %d from 0x%x", \
-			val, (u32)reg_addr);
+	mask = 0x8000;
+	// use same timing arguments as core driver
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val) { // expect success (val = 0)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
+		return false;
+	}
+	mask = 0x7FFF;
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val != -ETIMEDOUT) { // expect timeout (val = -ETIMEDOUT)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
 		return false;
 	}
 

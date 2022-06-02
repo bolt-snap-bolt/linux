@@ -262,9 +262,9 @@ struct gswip_priv {
 
 struct gsw_ops {
 	u32 (*read)(struct gswip_priv *priv, void *addr);
-	u32 (*read_timeout)(struct gswip_priv *priv, void *addr, \
-				u32 cleared, u32 sleep_us, u32 timeout_us);
 	void (*write)(struct gswip_priv *priv, void *addr, u32 val);
+	int (*poll_timeout)(struct gswip_priv *priv, void *addr, \
+			u32 cleared, u32 sleep_us, u32 timeout_us);
 };
 
 struct gswip_pce_table_entry {

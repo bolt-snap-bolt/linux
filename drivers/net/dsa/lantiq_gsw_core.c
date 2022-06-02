@@ -113,10 +113,10 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	gswip_switch_w(priv, val, offset);
 }
 
-static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
+static int gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
 				  u32 cleared)
 {
-	return priv->ops->read_timeout(priv, (priv->gswip + (offset * 4)), \
+	return priv->ops->poll_timeout(priv, (priv->gswip + (offset * 4)), \
 					cleared, 20, 50000);
 }
 
