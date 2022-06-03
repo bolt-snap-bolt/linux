@@ -138,6 +138,49 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		return false;
 	}
 
+	// basic read validation (check some registers against reset values)
+	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
+	val = gsw_mdio_read(priv, reg_addr);
+	if (val) {
+		printk("!RCC: read failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
+	}
+	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
+	val = gsw_mdio_read(priv, reg_addr);
+	if (val != 0x7FFF) {
+		printk("!RCC: read failure: read %d from 0x%x", \
+			val, (u32)reg_addr);
+		return false;
+	}
+
+	// basic validation of poll timeout function
+	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
+	mask = 0xFFFF;
+	// use same timing arguments as core driver
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val) { // expect success (val = 0)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
+		return false;
+	}
+	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
+	mask = 0x8000;
+	// use same timing arguments as core driver
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val) { // expect success (val = 0)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
+		return false;
+	}
+	mask = 0x7FFF;
+	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	if (val != -ETIMEDOUT) { // expect timeout (val = -ETIMEDOUT)
+		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
+			val, (u32)reg_addr, mask);
+		return false;
+	}
+
 	// check TBAR only writes when necessary
 	for (i = 0; i < 0xFFFF; i++) // 
 	{
@@ -162,51 +205,7 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		}
 	}
 
-	// read some actual registers
-	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
-	val = gsw_mdio_read(priv, reg_addr);
-	if (val) {
-		printk("!RCC: read failure: read %d from 0x%x", \
-			val, (u32)reg_addr);
-		return false;
-	}
-	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
-	val = gsw_mdio_read(priv, reg_addr);
-	if (val != 0x7FFF) {
-		printk("!RCC: read failure: read %d from 0x%x", \
-			val, (u32)reg_addr);
-		return false;
-	}
-
-	// do some read tests using the poll timeout function
-	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
-	mask = 0xFFFF;
-	// use same timing arguments as core driver
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
-	if (val) { // expect success (val = 0)
-		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
-			val, (u32)reg_addr, mask);
-		return false;
-	}
-	
-	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
-	mask = 0x8000;
-	// use same timing arguments as core driver
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
-	if (val) { // expect success (val = 0)
-		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
-			val, (u32)reg_addr, mask);
-		return false;
-	}
-	mask = 0x7FFF;
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
-	if (val != -ETIMEDOUT) { // expect timeout (val = -ETIMEDOUT)
-		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
-			val, (u32)reg_addr, mask);
-		return false;
-	}
-
-	// write a register
+	// write validation: write all acceptable values to a register
 	reg_addr = (void*)0xF396; // GPIO2_PUDSEL
 	for (i = 0; i < 0x7FFF; i++) // top bit is reserved
 	{
@@ -220,7 +219,21 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		gsw_mdio_write(priv, reg_addr, 0); //write zero to clear
 	}
 
-	// compound test: write 3 registers & read back, with checks inbetween
+	// write validation: read & write at all NUM_ACCESSIBLE_REGS places
+	reg_addr = tbar = 0xF397; // GPIO2_PUDEN
+	for (i = 0; i <= NUM_ACCESSIBLE_REGS; i++)
+	{
+		gsw_mdio_write_tbar(mdio, tbar);
+		gsw_mdio_write(priv, reg_addr, i);
+		if ((tbar != gsw_mdio_read_tbar(mdio))
+			|| (i != gsw_mdio_read(priv, reg_addr)))
+		{
+			printk("!RCC: MDIO reg range sweep fail on i=%d", i);
+		}
+		tbar--;
+	}
+
+	// compound test: write 3 regs & read back, with various checks inbetween
 	gsw_mdio_write_tbar(mdio, 0);
 	reg_addr = 0xF386; // Write #1: GPIO_PUDSEL
 	gsw_mdio_write(priv, reg_addr, 0x25A5);
@@ -251,20 +264,6 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		printk("!RCC: read failure: read:0x%x, expected:0xFFFF", \
 			val);
 		return false;
-	}
-
-	// verify that we read & write at all NUM_ACCESSIBLE_REGS places
-	reg_addr = tbar = 0xF397; // GPIO2_PUDEN
-	for (i = 0; i <= NUM_ACCESSIBLE_REGS; i++)
-	{
-		gsw_mdio_write_tbar(mdio, tbar);
-		gsw_mdio_write(priv, reg_addr, i);
-		if ((tbar != gsw_mdio_read_tbar(mdio))
-			|| (i != gsw_mdio_read(priv, reg_addr)))
-		{
-			printk("!RCC: MDIO reg range sweep fail on i=%d", i);
-		}
-		tbar--;
 	}
 
 	/* TODO WARP-5828:
