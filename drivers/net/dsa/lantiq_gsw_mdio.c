@@ -15,7 +15,7 @@
 
 #include "lantiq_gsw.h"
 
-#define RUN_MDIO_COMM_TESTS (1)
+#define RUN_MDIO_COMM_TESTS (0)
 
 #define NUM_ACCESSIBLE_REGS (30)
 #define TARGET_BASE_ADDRESS_REG (31)
@@ -126,7 +126,7 @@ static const struct gsw_ops gsw_mdio_ops = {
 static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
 	struct mdio_device *mdio;
-	void *reg_addr;
+	void *reg_addr, *reg_addr_2, *reg_addr_3;
 	u32 i, val, tbar, expected_tbar, mask;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
@@ -213,11 +213,58 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		gsw_mdio_write(priv, reg_addr, i);
 		val = gsw_mdio_read(priv, reg_addr);
 		if (i != val) {
-			printk("!RCC: write failure: read:%d, expected:%d", \
+			printk("!RCC: write failure: read:0x%x, expected:0x%x", \
 				val, i);
 			return false;
 		}
 		gsw_mdio_write(priv, reg_addr, 0); //write zero to clear
+	}
+
+	// compound test: write 3 registers & read back, with checks inbetween
+	gsw_mdio_write_tbar(mdio, 0);
+	reg_addr = 0xF386; // Write #1: GPIO_PUDSEL
+	gsw_mdio_write(priv, reg_addr, 0x25A5);
+	reg_addr_2 = 0xF396; // Write #2: GPIO2_PUDSEL
+	gsw_mdio_write(priv, reg_addr_2, 0x1A5A);
+	tbar = gsw_mdio_read_tbar(mdio);
+	if (reg_addr != tbar) { // expect no tbar change on 2nd write
+		printk("!RCC: tbar mismatch: read:0x%x, expected:0x%x", \
+			tbar, reg_addr);
+		return false;
+	}
+	reg_addr_3 = 0xF51A; // Write #3: MSPI_DIN45
+	gsw_mdio_write(priv, reg_addr_3, 0xFFFF);
+	val = gsw_mdio_read(priv, reg_addr);
+	if (val != 0x25A5) {
+		printk("!RCC: read failure: read:0x%x, expected:0x25A5", \
+			val);
+		return false;
+	}
+	val = gsw_mdio_read(priv, reg_addr_2);
+	if (val != 0x1A5A) {
+		printk("!RCC: read failure: read:0x%x, expected:0x1A5A", \
+			val);
+		return false;
+	}
+	val = gsw_mdio_read(priv, reg_addr_3);
+	if (val != 0xFFFF) {
+		printk("!RCC: read failure: read:0x%x, expected:0xFFFF", \
+			val);
+		return false;
+	}
+
+	// verify that we read & write at all NUM_ACCESSIBLE_REGS places
+	reg_addr = tbar = 0xF397; // GPIO2_PUDEN
+	for (i = 0; i <= NUM_ACCESSIBLE_REGS; i++)
+	{
+		gsw_mdio_write_tbar(mdio, tbar);
+		gsw_mdio_write(priv, reg_addr, i);
+		if ((tbar != gsw_mdio_read_tbar(mdio))
+			|| (i != gsw_mdio_read(priv, reg_addr)))
+		{
+			printk("!RCC: MDIO reg range sweep fail on i=%d", i);
+		}
+		tbar--;
 	}
 
 	/* TODO WARP-5828:
