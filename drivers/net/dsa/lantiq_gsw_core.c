@@ -1762,38 +1762,16 @@ remove_gphy:
 	return err;
 }
 
-int gsw_core_probe(struct platform_device *pdev)
+int gsw_core_probe(struct gswip_priv *priv, struct device *dev)
 {
-	/* TODO WARP-5829:
-	 * - determine how much of this should be in gsw_platform_probe() instead
-	 * - have gsw_mdio_probe() and gsw_platform_probe() call this gracefully
-	 */
-	struct gswip_priv *priv;
 	struct device_node *mdio_np, *gphy_fw_np;
-	struct device *dev = &pdev->dev;
 	int err;
 	int i;
 	u32 version;
 
-	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
-		return -ENOMEM;
-
 	priv->hw_info = of_device_get_match_data(dev);
 	if (!priv->hw_info)
 		return -EINVAL;
-
-	priv->gswip = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(priv->gswip))
-		return PTR_ERR(priv->gswip);
-
-	priv->mdio = devm_platform_ioremap_resource(pdev, 1);
-	if (IS_ERR(priv->mdio))
-		return PTR_ERR(priv->mdio);
-
-	priv->mii = devm_platform_ioremap_resource(pdev, 2);
-	if (IS_ERR(priv->mii))
-		return PTR_ERR(priv->mii);
 
 	priv->ds = devm_kzalloc(dev, sizeof(*priv->ds), GFP_KERNEL);
 	if (!priv->ds)
@@ -1804,10 +1782,19 @@ int gsw_core_probe(struct platform_device *pdev)
 	priv->ds->priv = priv;
 	priv->ds->ops = &gswip_switch_ops;
 	priv->dev = dev;
-	version = gswip_switch_r(priv, GSWIP_VERSION);
 
-	/* bring up the mdio bus */
-	gphy_fw_np = of_get_compatible_child(dev->of_node, "lantiq,gphy-fw");
+	/* TODO WARP-5828:
+	 * do the external parts have versioning?
+	 * determine where to put this & uncomment
+	 */
+	//version = gswip_switch_r(priv, GSWIP_VERSION);
+
+	/* TODO WARP-5828:
+	 * determine if this is applicable to external parts
+	 * determine where to put this & uncomment
+	 */
+/*
+  	gphy_fw_np = of_get_compatible_child(dev->of_node, "lantiq,gphy-fw");
 	if (gphy_fw_np) {
 		err = gswip_gphy_fw_list(priv, gphy_fw_np, version);
 		of_node_put(gphy_fw_np);
@@ -1816,8 +1803,13 @@ int gsw_core_probe(struct platform_device *pdev)
 			return err;
 		}
 	}
+*/
 
-	/* bring up the mdio bus */
+	/* TODO WARP-5828:
+	 * determine if this is applicable, move to platform probe if not.
+	 * uncomment wherever it ends up.
+	 */
+/* 	
 	mdio_np = of_get_compatible_child(dev->of_node, "lantiq,xrx200-mdio");
 	if (mdio_np) {
 		err = gswip_slave_mdio(priv, mdio_np);
@@ -1826,7 +1818,12 @@ int gsw_core_probe(struct platform_device *pdev)
 			goto put_mdio_node;
 		}
 	}
+ */
 
+	/* TODO WARP-5828:
+	 * get register mapping corrected and uncomment
+	 */
+/*
 	err = dsa_register_switch(priv->ds);
 	if (err) {
 		dev_err(dev, "dsa switch register failed: %i\n", err);
@@ -1839,11 +1836,10 @@ int gsw_core_probe(struct platform_device *pdev)
 		goto disable_switch;
 	}
 
-	platform_set_drvdata(pdev, priv);
-
 	dev_info(dev, "probed GSWIP version %lx mod %lx\n",
 		 (version & GSWIP_VERSION_REV_MASK) >> GSWIP_VERSION_REV_SHIFT,
 		 (version & GSWIP_VERSION_MOD_MASK) >> GSWIP_VERSION_MOD_SHIFT);
+*/
 	return 0;
 
 disable_switch:

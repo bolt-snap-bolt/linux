@@ -307,7 +307,7 @@ struct gswip_rmon_cnt_desc {
 
 #define MIB_DESC(_size, _offset, _name) {.size = _size, .offset = _offset, .name = _name}
 
-int gsw_core_probe(struct platform_device *pdev);
+int gsw_core_probe(struct gswip_priv *priv, struct device *dev);
 int gsw_core_remove(struct gswip_priv *priv);
 
 #endif

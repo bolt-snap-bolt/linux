@@ -138,19 +138,32 @@ static const struct gsw_ops gsw_mdio_ops = {
 
 /*-------------------------------------------------------------------------*/
 
-static int gsw_mdio_probe(struct mdio_device *pmdiodev)
+static int gsw_mdio_probe(struct mdio_device *mdiodev)
 {
-	/* TODO WARP-5829: write this function */
-	printk("!RCC: GSW MDIO probe func invoked.\n");
-	dev_err(&(pmdiodev->dev), "GSW120 SUPPORT NOT YET IMPLEMENTED\n");
+	struct device *dev = &(mdiodev->dev);
+	struct gsw_mdio *mdio_data;
+	int err;
 
-	return EFAULT;
+	mdio_data = devm_kzalloc(dev, sizeof(*mdio_data), GFP_KERNEL);
+	if (!mdio_data)
+		return -ENOMEM;
+
+	mdio_data->common.ops = &gsw_mdio_ops;
+	
+	mdio_data->mdio_dev = mdiodev;
+	dev_set_drvdata(dev, mdio_data);
+
+	err = gsw_core_probe(&mdio_data->common, dev);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 static void gsw_mdio_remove(struct mdio_device *pmdiodev)
 {
-	/* TODO WARP-5829: verify nothing else needs to be done in this function */
-	gsw_core_remove((struct gswip_priv*)mdiodev_get_drvdata(pmdiodev));
+	struct gsw_mdio *mdio_data = mdiodev_get_drvdata(pmdiodev);
+	gsw_core_remove(&mdio_data->common);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -160,9 +173,6 @@ static const struct gsw_hw_info gsw_120 = {
 	/* TODO WARP-5828: Determine what these values should be */
 	.max_ports = 4,
 	.cpu_port = 1,
-	/* TODO WARP-5826: will also need .ops for newer kernel versions,
-	 * where parts have had their DSA operations broken out.
-	 */
 };
 
 static const struct of_device_id gsw_mdio_of_match[] = {
