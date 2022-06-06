@@ -6,7 +6,7 @@
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
  * Copyright (C) 2022 Reliable Controls Corporation,
- * 					Harley Sims <hsims@reliablecontrols.com>
+ * 			Harley Sims <hsims@reliablecontrols.com>
  *
  * The VLAN and bridge model the GSWIP hardware uses does not directly
  * matches the model DSA uses.
@@ -27,7 +27,6 @@
  * between all LAN ports by default.
  */
 
-/* TODO WARP-5829: determine how many of these includes I can delete */
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -36,13 +35,11 @@
 #include <linux/if_vlan.h>
 #include <linux/iopoll.h>
 #include <linux/mfd/syscon.h>
-#include <linux/module.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
-#include <linux/of_platform.h>
+#include <linux/of_device.h>
 #include <linux/phy.h>
 #include <linux/phylink.h>
-#include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
 #include <net/dsa.h>
@@ -116,11 +113,11 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 	gswip_switch_w(priv, val, offset);
 }
 
-static u32 gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
+static int gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
 				  u32 cleared)
 {
-	return priv->ops->read_timeout(priv, (priv->gswip + (offset * 4)), \
-								cleared, 20, 50000);
+	return priv->ops->poll_timeout(priv, (priv->gswip + (offset * 4)), \
+					cleared, 20, 50000);
 }
 
 static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
@@ -1887,5 +1884,5 @@ MODULE_FIRMWARE("lantiq/xrx200_phy11g_a22.bin");
 MODULE_FIRMWARE("lantiq/xrx200_phy22f_a14.bin");
 MODULE_FIRMWARE("lantiq/xrx200_phy22f_a22.bin");
 MODULE_AUTHOR("Hauke Mehrtens <hauke@hauke-m.de>");
-MODULE_DESCRIPTION("Core driver for the MaxLinear / Lantiq / Intel GSW switches");
+MODULE_DESCRIPTION("Core driver for MaxLinear / Lantiq / Intel GSW switches");
 MODULE_LICENSE("GPL v2");

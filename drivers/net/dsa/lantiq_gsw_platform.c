@@ -6,32 +6,15 @@
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
  * Copyright (C) 2022 Reliable Controls Corporation,
- * 						Harley Sims <hsims@reliablecontrols.com>
+ * 			Harley Sims <hsims@reliablecontrols.com>
  */
 
-/* TODO WARP-5829: determine how many of these includes I can delete */
-#include <linux/clk.h>
-#include <linux/delay.h>
-#include <linux/etherdevice.h>
-#include <linux/firmware.h>
-#include <linux/if_bridge.h>
-#include <linux/if_vlan.h>
 #include <linux/iopoll.h>
-#include <linux/mfd/syscon.h>
 #include <linux/module.h>
-#include <linux/of_mdio.h>
-#include <linux/of_net.h>
 #include <linux/of_platform.h>
-#include <linux/phy.h>
-#include <linux/phylink.h>
 #include <linux/platform_device.h>
-#include <linux/regmap.h>
-#include <linux/reset.h>
-#include <net/dsa.h>
-#include <dt-bindings/mips/lantiq_rcu_gphy.h>
 
 #include "lantiq_gsw.h"
-#include "lantiq_pce.h"
 
 struct gsw_platform {
 	struct platform_device *platform_dev;
@@ -44,14 +27,14 @@ static u32 gsw_platform_read(struct gswip_priv *priv, void *addr)
 	return __raw_readl(addr);
 }
 
-static u32 gsw_platform_read_timeout(struct gswip_priv *priv, void *addr, 
-								u32 cleared, u32 sleep_us, u32 timeout_us)
+static int gsw_platform_poll_timeout(struct gswip_priv *priv, void *addr, 
+				u32 cleared, u32 sleep_us, u32 timeout_us)
 {
 	u32 val;
 	
 	(void)priv;
 	return readx_poll_timeout(__raw_readl, addr, val,
-						(val & cleared) == 0, sleep_us, timeout_us);
+				(val & cleared) == 0, sleep_us, timeout_us);
 }
 
 static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
@@ -62,8 +45,8 @@ static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
 
 static const struct gsw_ops gsw_platform_ops = {
 	.read = gsw_platform_read,
-	.read_timeout = gsw_platform_read_timeout,
 	.write = gsw_platform_write,
+	.poll_timeout = gsw_platform_poll_timeout,
 };
 
 /*-------------------------------------------------------------------------*/
