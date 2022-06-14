@@ -142,7 +142,6 @@ static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
 
 static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
 {
-
 	return priv->ops->read(priv, priv->mii, offset);
 }
 
