@@ -78,7 +78,7 @@ static u32 gsw_mdio_calculate_reg_addr(struct gswip_priv *priv, \
 			return (u32)priv->mdio + offset;
 		else
 			return (u32)base + offset;
-	} else  if (base == priv->mii) {
+	} else if (base == priv->mii) {
 		switch (offset) {
 		case GSWIP_MII_CFGp(5):
 			return GSW_REG_MII_CFG5;
