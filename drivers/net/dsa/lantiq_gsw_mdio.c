@@ -15,10 +15,15 @@
 
 #include "lantiq_gsw.h"
 
-#define RUN_MDIO_COMM_TESTS (0)
+#define RUN_MDIO_COMM_TESTS 		(0)
 
-#define NUM_ACCESSIBLE_REGS (30)
-#define TARGET_BASE_ADDRESS_REG (31)
+#define NUM_ACCESSIBLE_REGS 		(30)
+#define TARGET_BASE_ADDRESS_REG 	(31)
+#define GSW_REG_BASE_OFFSET_SWITCH 	(0xE000)
+#define GSW_REG_BASE_OFFSET_MDIO 	(0xF400)
+#define GSW_REG_BASE_OFFSET_MII 	(0x0000)
+#define GSW_REG_MII_CFG5		(0xF100)
+#define GSW_REG_MII_PCDU5		(0xF101)
 
 struct gsw_mdio {
 	struct mdio_device *mdio_dev;
@@ -64,13 +69,40 @@ static u32 gsw_mdio_check_write_tbar(struct mdio_device *mdio, u32 reg_addr)
 	return tbar;
 }
 
-static u32 gsw_mdio_read(struct gswip_priv *priv, void *addr)
+static u32 gsw_mdio_calculate_reg_addr(struct gswip_priv *priv, \
+					void *base, u32 offset)
+{
+	if (base == priv->gswip) {
+		if (offset == GSWIP_SWRES)
+			// SWRES is at mdio base on MaxLinear parts
+			return (u32)priv->mdio + offset;
+		else
+			return (u32)base + offset;
+	} else  if (base == priv->mii) {
+		switch (offset) {
+		case GSWIP_MII_CFGp(5):
+			return GSW_REG_MII_CFG5;
+		case GSWIP_MII_PCDU5:
+			return GSW_REG_MII_PCDU5;
+		default:
+			/* None of the other MII base registers referred to by
+			* the core driver logic exist on MaxLinear parts.
+			* Return 0 and do not perform any R/W operation.
+			*/
+			return 0;
+		}
+	} else { //(base == priv->mdio)
+		return (u32)base + offset;
+	} 
+}
+
+static u32 gsw_mdio_read(struct gswip_priv *priv, void *base, u32 offset)
 {
 	struct mdio_device *mdio;
 	u32 reg_addr, tbar, val;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
-	reg_addr = (u32)addr;
+	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
 	mutex_lock(&mdio->bus->mdio_lock);
 	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
@@ -80,15 +112,15 @@ static u32 gsw_mdio_read(struct gswip_priv *priv, void *addr)
 	return val;
 }
 
-static int gsw_mdio_poll_timeout(struct gswip_priv *priv, void *addr,
-				u32 cleared, u32 sleep_us, u32 timeout_us)
+static int gsw_mdio_poll_timeout(struct gswip_priv *priv, void *base, \
+			u32 offset, u32 cleared, u32 sleep_us, u32 timeout_us)
 {
 	struct mdio_device *mdio;
 	u32 reg_addr, tbar, val;
 	int retval;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
-	reg_addr = (u32)addr;
+	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
 	mutex_lock(&mdio->bus->mdio_lock);
 	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
@@ -100,13 +132,14 @@ static int gsw_mdio_poll_timeout(struct gswip_priv *priv, void *addr,
 	return retval;
 }
 
-static void gsw_mdio_write(struct gswip_priv *priv, void *addr, u32 val)
+static void gsw_mdio_write(struct gswip_priv *priv, void *base, \
+				u32 offset, u32 val)
 {
 	struct mdio_device *mdio;
 	u32 reg_addr, tbar;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
-	reg_addr = (u32)addr;
+	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
 	mutex_lock(&mdio->bus->mdio_lock);
 	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
@@ -123,10 +156,16 @@ static const struct gsw_ops gsw_mdio_ops = {
 /*-------------------------------------------------------------------------*/
 
 #if RUN_MDIO_COMM_TESTS
+#define GSW_REG_OFFSET_GPIO_OUT		(0x1380) // 0xF380 = priv->gswip + 0x1380
+#define GSW_REG_OFFSET_GPIO_PUDSEL	(0x1386) // 0xF386 = priv->gswip + 0x1386
+#define GSW_REG_OFFSET_GPIO2_OD		(0x1395) // 0xF395 = priv->gswip + 0x1395
+#define GSW_REG_OFFSET_GPIO2_PUDSEL	(0x1396) // 0xF396 = priv->gswip + 0x1396
+#define GSW_REG_OFFSET_GPIO2_PUDEN	(0x1397) // 0xF397 = priv->gswip + 0x1397
+#define GSW_REG_OFFSET_MSPI_DIN45	(0x151A) // 0xF51A = priv->gswip + 0x151A
 static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
 	struct mdio_device *mdio;
-	void *reg_addr, *reg_addr_2, *reg_addr_3;
+	u32 reg_addr, reg_addr_2, reg_addr_3;
 	u32 i, val, tbar, expected_tbar, mask;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
@@ -139,15 +178,15 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	}
 
 	// basic read validation (check some registers against reset values)
-	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
-	val = gsw_mdio_read(priv, reg_addr);
-	if (val) {
+	reg_addr = GSW_REG_OFFSET_GPIO_OUT; // reset value of 0x0000
+	val = gsw_mdio_read(priv, priv->gswip, reg_addr);
+	if (val != 0) {
 		printk("!RCC: read failure: read %d from 0x%x", \
 			val, (u32)reg_addr);
 		return false;
 	}
-	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
-	val = gsw_mdio_read(priv, reg_addr);
+	reg_addr = GSW_REG_OFFSET_GPIO2_OD; // reset value of 0x7FFF
+	val = gsw_mdio_read(priv, priv->gswip, reg_addr);
 	if (val != 0x7FFF) {
 		printk("!RCC: read failure: read %d from 0x%x", \
 			val, (u32)reg_addr);
@@ -155,26 +194,26 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	}
 
 	// basic validation of poll timeout function
-	reg_addr = (void*)0xF380; //GPIO_OUT, reset value of 0x0000
+	reg_addr = GSW_REG_OFFSET_GPIO_OUT; // reset value of 0x0000
 	mask = 0xFFFF;
 	// use same timing arguments as core driver
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
-	if (val) { // expect success (val = 0)
+	val = gsw_mdio_poll_timeout(priv, priv->gswip, reg_addr, mask, 20, 50000);
+	if (val != 0) { // expect success (val = 0)
 		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
 			val, (u32)reg_addr, mask);
 		return false;
 	}
-	reg_addr = (void*)0xF395; // GPIO2_OD, reset values of 0x7FFF
+	reg_addr = GSW_REG_OFFSET_GPIO2_OD; // reset value of 0x7FFF
 	mask = 0x8000;
 	// use same timing arguments as core driver
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
-	if (val) { // expect success (val = 0)
+	val = gsw_mdio_poll_timeout(priv, priv->gswip, reg_addr, mask, 20, 50000);
+	if (val != 0) { // expect success (val = 0)
 		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
 			val, (u32)reg_addr, mask);
 		return false;
 	}
 	mask = 0x7FFF;
-	val = gsw_mdio_poll_timeout(priv, reg_addr, mask, 20, 50000);
+	val = gsw_mdio_poll_timeout(priv, priv->gswip, reg_addr, mask, 20, 50000);
 	if (val != -ETIMEDOUT) { // expect timeout (val = -ETIMEDOUT)
 		printk("!RCC: poll_timeout failure: retval:0x%x reading 0x%x w mask 0x%x", \
 			val, (u32)reg_addr, mask);
@@ -206,27 +245,28 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	}
 
 	// write validation: write all acceptable values to a register
-	reg_addr = (void*)0xF396; // GPIO2_PUDSEL
+	reg_addr = GSW_REG_OFFSET_GPIO2_PUDSEL;
 	for (i = 0; i < 0x7FFF; i++) // top bit is reserved
 	{
-		gsw_mdio_write(priv, reg_addr, i);
-		val = gsw_mdio_read(priv, reg_addr);
+		gsw_mdio_write(priv, priv->gswip, reg_addr, i);
+		val = gsw_mdio_read(priv, priv->gswip, reg_addr);
 		if (i != val) {
 			printk("!RCC: write failure: read:0x%x, expected:0x%x", \
 				val, i);
 			return false;
 		}
-		gsw_mdio_write(priv, reg_addr, 0); //write zero to clear
+		gsw_mdio_write(priv, priv->gswip, reg_addr, 0); //write zero to clear
 	}
 
 	// write validation: read & write at all NUM_ACCESSIBLE_REGS places
-	reg_addr = tbar = 0xF397; // GPIO2_PUDEN
+	reg_addr = GSW_REG_OFFSET_GPIO2_PUDEN;
+	tbar = (u32)priv->gswip + reg_addr;
 	for (i = 0; i <= NUM_ACCESSIBLE_REGS; i++)
 	{
 		gsw_mdio_write_tbar(mdio, tbar);
-		gsw_mdio_write(priv, reg_addr, i);
+		gsw_mdio_write(priv, priv->gswip, reg_addr, i);
 		if ((tbar != gsw_mdio_read_tbar(mdio))
-			|| (i != gsw_mdio_read(priv, reg_addr)))
+			|| (i != gsw_mdio_read(priv, priv->gswip, reg_addr)))
 		{
 			printk("!RCC: MDIO reg range sweep fail on i=%d", i);
 		}
@@ -235,31 +275,31 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 
 	// compound test: write 3 regs & read back, with various checks inbetween
 	gsw_mdio_write_tbar(mdio, 0);
-	reg_addr = 0xF386; // Write #1: GPIO_PUDSEL
-	gsw_mdio_write(priv, reg_addr, 0x25A5);
-	reg_addr_2 = 0xF396; // Write #2: GPIO2_PUDSEL
-	gsw_mdio_write(priv, reg_addr_2, 0x1A5A);
+	reg_addr = GSW_REG_OFFSET_GPIO_PUDSEL; // Write #1
+	gsw_mdio_write(priv, priv->gswip, reg_addr, 0x25A5);
+	reg_addr_2 = GSW_REG_OFFSET_GPIO2_PUDSEL; // Write #2
+	gsw_mdio_write(priv, priv->gswip, reg_addr_2, 0x1A5A);
 	tbar = gsw_mdio_read_tbar(mdio);
-	if (reg_addr != tbar) { // expect no tbar change on 2nd write
+	if (tbar != ((u32)priv->gswip + reg_addr)) { // expect no tbar change on 2nd write
 		printk("!RCC: tbar mismatch: read:0x%x, expected:0x%x", \
 			tbar, reg_addr);
 		return false;
 	}
-	reg_addr_3 = 0xF51A; // Write #3: MSPI_DIN45
-	gsw_mdio_write(priv, reg_addr_3, 0xFFFF);
-	val = gsw_mdio_read(priv, reg_addr);
+	reg_addr_3 = GSW_REG_OFFSET_MSPI_DIN45; // Write #3
+	gsw_mdio_write(priv, priv->gswip, reg_addr_3, 0xFFFF);
+	val = gsw_mdio_read(priv, priv->gswip, reg_addr);
 	if (val != 0x25A5) {
 		printk("!RCC: read failure: read:0x%x, expected:0x25A5", \
 			val);
 		return false;
 	}
-	val = gsw_mdio_read(priv, reg_addr_2);
+	val = gsw_mdio_read(priv, priv->gswip, reg_addr_2);
 	if (val != 0x1A5A) {
 		printk("!RCC: read failure: read:0x%x, expected:0x1A5A", \
 			val);
 		return false;
 	}
-	val = gsw_mdio_read(priv, reg_addr_3);
+	val = gsw_mdio_read(priv, priv->gswip, reg_addr_3);
 	if (val != 0xFFFF) {
 		printk("!RCC: read failure: read:0x%x, expected:0xFFFF", \
 			val);
@@ -284,11 +324,14 @@ static int gsw_mdio_probe(struct mdio_device *mdiodev)
 	mdio_data = devm_kzalloc(dev, sizeof(*mdio_data), GFP_KERNEL);
 	if (!mdio_data)
 		return -ENOMEM;
-
-	mdio_data->common.ops = &gsw_mdio_ops;
 	
 	mdio_data->mdio_dev = mdiodev;
 	dev_set_drvdata(dev, mdio_data);
+
+	mdio_data->common.ops = &gsw_mdio_ops;
+	mdio_data->common.gswip = (void*)GSW_REG_BASE_OFFSET_SWITCH;
+	mdio_data->common.mdio = (void*)GSW_REG_BASE_OFFSET_MDIO;
+	mdio_data->common.mii = (void*)GSW_REG_BASE_OFFSET_MII;
 
 	err = gsw_core_probe(&mdio_data->common, dev);
 	if (err)

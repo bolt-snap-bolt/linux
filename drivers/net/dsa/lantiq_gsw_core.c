@@ -95,12 +95,12 @@ static const struct gswip_rmon_cnt_desc gswip_rmon_cnt[] = {
 
 static u32 gswip_switch_r(struct gswip_priv *priv, u32 offset)
 {
-	return priv->ops->read(priv, (priv->gswip + (offset * 4)));
+	return priv->ops->read(priv, priv->gswip, offset);
 }
 
 static void gswip_switch_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, (priv->gswip + (offset * 4)), val);
+	priv->ops->write(priv, priv->gswip, offset, val);
 }
 
 static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -116,18 +116,18 @@ static void gswip_switch_mask(struct gswip_priv *priv, u32 clear, u32 set,
 static int gswip_switch_r_timeout(struct gswip_priv *priv, u32 offset,
 				  u32 cleared)
 {
-	return priv->ops->poll_timeout(priv, (priv->gswip + (offset * 4)), \
+	return priv->ops->poll_timeout(priv, priv->gswip, offset, \
 					cleared, 20, 50000);
 }
 
 static u32 gswip_slave_mdio_r(struct gswip_priv *priv, u32 offset)
 {
-	return priv->ops->read(priv, (priv->mdio + (offset * 4)));
+	return priv->ops->read(priv, priv->mdio, offset);
 }
 
 static void gswip_slave_mdio_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, (priv->mdio + (offset * 4)), val);
+	priv->ops->write(priv, priv->mdio, offset, val);
 }
 
 static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
@@ -142,12 +142,13 @@ static void gswip_slave_mdio_mask(struct gswip_priv *priv, u32 clear, u32 set,
 
 static u32 gswip_mii_r(struct gswip_priv *priv, u32 offset)
 {
-	return priv->ops->read(priv, (priv->mii + (offset * 4)));
+
+	return priv->ops->read(priv, priv->mii, offset);
 }
 
 static void gswip_mii_w(struct gswip_priv *priv, u32 val, u32 offset)
 {
-	priv->ops->write(priv, (priv->mii + (offset * 4)), val);
+	priv->ops->write(priv, priv->mii, offset, val);
 }
 
 static void gswip_mii_mask(struct gswip_priv *priv, u32 clear, u32 set,

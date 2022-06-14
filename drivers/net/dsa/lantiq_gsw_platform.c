@@ -21,26 +21,27 @@ struct gsw_platform {
 	struct gswip_priv common;
 };
 
-static u32 gsw_platform_read(struct gswip_priv *priv, void *addr)
+static u32 gsw_platform_read(struct gswip_priv *priv, void *base, u32 offset)
 {
 	(void)priv;
-	return __raw_readl(addr);
+	return __raw_readl(base + (offset * 4));
 }
 
-static int gsw_platform_poll_timeout(struct gswip_priv *priv, void *addr, 
-				u32 cleared, u32 sleep_us, u32 timeout_us)
+static int gsw_platform_poll_timeout(struct gswip_priv *priv, void *base, \
+			u32 offset, u32 cleared, u32 sleep_us, u32 timeout_us)
 {
 	u32 val;
 	
 	(void)priv;
-	return readx_poll_timeout(__raw_readl, addr, val,
+	return readx_poll_timeout(__raw_readl, base + (offset * 4), val,
 				(val & cleared) == 0, sleep_us, timeout_us);
 }
 
-static void gsw_platform_write(struct gswip_priv *priv, void *addr, u32 val)
+static void gsw_platform_write(struct gswip_priv *priv, void *base, \
+						u32 offset, u32 val)
 {
 	(void)priv;
-	__raw_writel(val, addr);
+	__raw_writel(val, base + (offset * 4));
 }
 
 static const struct gsw_ops gsw_platform_ops = {
