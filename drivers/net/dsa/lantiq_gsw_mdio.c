@@ -15,7 +15,10 @@
 
 #include "lantiq_gsw.h"
 
-#define RUN_MDIO_COMM_TESTS 		(0)
+#define RUN_MDIO_COMM_TESTS 		(1)
+#if RUN_MDIO_COMM_TESTS
+#include <net/dsa.h>
+#endif
 
 #define NUM_ACCESSIBLE_REGS 		(30)
 #define TARGET_BASE_ADDRESS_REG 	(31)
@@ -162,11 +165,23 @@ static const struct gsw_ops gsw_mdio_ops = {
 #define GSW_REG_OFFSET_GPIO2_PUDSEL	(0x1396) // 0xF396 = priv->gswip + 0x1396
 #define GSW_REG_OFFSET_GPIO2_PUDEN	(0x1397) // 0xF397 = priv->gswip + 0x1397
 #define GSW_REG_OFFSET_MSPI_DIN45	(0x151A) // 0xF51A = priv->gswip + 0x151A
+
+#define MDIO_PHY_REG_CTRL		(0x00)
+#define MDIO_PHY_REG_FWV		(0x1E)
+// Expected PHY FW version determined experimentally (i.e. by reading)
+#define MDIO_PHY_EXPECTED_FWV		(0x8548)
+// For unknown reason (part of DSA bring-up?), the port has been powered
+// down at this point, so the expected CTRL register value is the datasheet's
+// listed reset value (0x9040) with the RST bit (b15) de-asserted and the
+// PD bit (b11) asserted (0x1840)
+#define MDIO_PHY_EXPECTED_CTRL		(0x1840)
+#define MDIO_PHY_CTRL_ISOLATION_MODE	(0x0400)
 static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
 	struct mdio_device *mdio;
-	u32 reg_addr, reg_addr_2, reg_addr_3;
-	u32 i, val, tbar, expected_tbar, mask;
+	u32 reg_addr, reg_addr_2, reg_addr_3, \
+		i, val, tbar, expected_tbar, \
+		original_val, mask, err;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 
@@ -306,10 +321,54 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 		return false;
 	}
 
-	/* TODO WARP-5828:
-	 * - Verify reads/writes targeting PHYs on the GSW internal MDIO bus work as expected
-	 * - Sub-in register defines for hard-coded addresses above
-	 */
+	// Verify that we can access the GSW's internal MDIO bus
+	// via simple read of FW version from 2 internal PHYs
+	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
+						0, MDIO_PHY_REG_FWV);
+	if (val != MDIO_PHY_EXPECTED_FWV) {
+		printk("!RCC: ERROR rd PHY0 FWV reg: 0x%X", val);
+		return false;
+	}
+	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
+						1, MDIO_PHY_REG_FWV);
+	if (val != MDIO_PHY_EXPECTED_FWV) {
+		printk("!RCC: ERROR rd PHY1 FWV reg: 0x%X", val);
+		return false;
+	}
+
+	// compound test for internal MDIO bus:
+	// 	perform read-modify-write-read on PHY control register
+	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
+						0, MDIO_PHY_REG_CTRL);
+	if (val != MDIO_PHY_EXPECTED_CTRL) {
+		printk("!RCC: ERROR w/r PHY0 CTRL reg: read 0x%X", val);
+		return false;
+	}
+	// enable isolation mode
+	val |= MDIO_PHY_CTRL_ISOLATION_MODE;
+	printk("!RCC: WRITING 0x%X", val);
+	err = priv->ds->slave_mii_bus->write(priv->ds->slave_mii_bus, \
+						0, MDIO_PHY_REG_CTRL, val);
+	if (err) {
+		printk("!RCC: ERROR w/r PHY0 CTRL reg: write err:%d", err);
+		return false;
+	}
+	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
+						1, MDIO_PHY_REG_CTRL);
+	// check that it stuck
+	if (val != (MDIO_PHY_EXPECTED_CTRL | MDIO_PHY_CTRL_ISOLATION_MODE))
+	{
+		printk("!RCC: ERROR w/r PHY0 CTRL reg: read-back 0x%X", val);
+		return false;
+	}
+	// write original value back
+	val = MDIO_PHY_EXPECTED_CTRL;
+	err = priv->ds->slave_mii_bus->write(priv->ds->slave_mii_bus, \
+						0, MDIO_PHY_REG_CTRL, val);
+	if (err) {
+		printk("!RCC: ERROR w/r PHY0 CTRL reg: write-back err:%d", err);
+		return false;
+	}
 
 	return true;
 }
@@ -358,12 +417,19 @@ static void gsw_mdio_remove(struct mdio_device *pmdiodev)
 /* MaxLinear GSW120 & GSW125 */
 static const struct gsw_hw_info gsw_120 = {
 	/* TODO WARP-5828: Determine what these values should be */
-	.max_ports = 4,
-	.cpu_port = 1,
+	.max_ports = 6,
+	.cpu_port = 5,
+};
+
+/* MaxLinear GSW140 (also Intel PEB7085?) */
+static const struct gsw_hw_info gsw_140 = {
+	.max_ports = 6,
+	.cpu_port = 5,
 };
 
 static const struct of_device_id gsw_mdio_of_match[] = {
 	{ .compatible = "maxlinear,gsw12x", .data = &gsw_120 },
+	{ .compatible = "maxlinear,gsw140", .data = &gsw_140 },
 	{},
 };
 
