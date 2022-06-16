@@ -6,7 +6,7 @@
  * Copyright (C) 2012 John Crispin <john@phrozen.org>
  * Copyright (C) 2017 - 2019 Hauke Mehrtens <hauke@hauke-m.de>
  * Copyright (C) 2022 Reliable Controls Corporation,
- * 						Harley Sims <hsims@reliablecontrols.com>
+ * 			Harley Sims <hsims@reliablecontrols.com>
  *
  * The VLAN and bridge model the GSWIP hardware uses does not directly
  * matches the model DSA uses.
@@ -261,9 +261,9 @@ struct gswip_priv {
 };
 
 struct gsw_ops {
-	u32 (*read)(struct gswip_priv *priv, void *addr);
-	void (*write)(struct gswip_priv *priv, void *addr, u32 val);
-	int (*poll_timeout)(struct gswip_priv *priv, void *addr, \
+	u32 (*read)(struct gswip_priv *priv, void *base, u32 offset);
+	void (*write)(struct gswip_priv *priv, void *base, u32 offset, u32 val);
+	int (*poll_timeout)(struct gswip_priv *priv, void *base, u32 offset, \
 			u32 cleared, u32 sleep_us, u32 timeout_us);
 };
 
