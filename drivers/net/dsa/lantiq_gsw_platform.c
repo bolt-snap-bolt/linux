@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/phy.h>
 
 #include "lantiq_gsw.h"
 
@@ -44,10 +45,40 @@ static void gsw_platform_write(struct gswip_priv *priv, void *base, \
 	__raw_writel(val, base + (offset * 4));
 }
 
+static bool gsw_platform_check_interface_support(int port, phy_interface_t interface)
+{
+	switch (port) {
+	case 0:
+	case 1:
+		if (!phy_interface_mode_is_rgmii(interface)&&
+			interface != PHY_INTERFACE_MODE_MII &&
+			interface != PHY_INTERFACE_MODE_REVMII &&
+			interface != PHY_INTERFACE_MODE_RMII)
+			return false;
+		break;
+	case 2:
+	case 3:
+	case 4:
+		if (interface != PHY_INTERFACE_MODE_INTERNAL)
+			return false;
+		break;
+	case 5:
+		if (!phy_interface_mode_is_rgmii(interface) &&
+		    interface != PHY_INTERFACE_MODE_INTERNAL)
+			return false;
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
 static const struct gsw_ops gsw_platform_ops = {
-	.read = gsw_platform_read,
-	.write = gsw_platform_write,
-	.poll_timeout = gsw_platform_poll_timeout,
+	.read 				= gsw_platform_read,
+	.write 				= gsw_platform_write,
+	.poll_timeout 			= gsw_platform_poll_timeout,
+	.check_interface_support 	= gsw_platform_check_interface_support,
 };
 
 /*-------------------------------------------------------------------------*/

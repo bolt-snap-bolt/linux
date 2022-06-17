@@ -261,10 +261,12 @@ struct gswip_priv {
 };
 
 struct gsw_ops {
-	u32 (*read)(struct gswip_priv *priv, void *base, u32 offset);
-	void (*write)(struct gswip_priv *priv, void *base, u32 offset, u32 val);
-	int (*poll_timeout)(struct gswip_priv *priv, void *base, u32 offset, \
-			u32 cleared, u32 sleep_us, u32 timeout_us);
+	u32 	(*read)(struct gswip_priv *priv, void *base, u32 offset);
+	void 	(*write)(struct gswip_priv *priv, void *base, u32 offset, \
+			u32 val);
+	int 	(*poll_timeout)(struct gswip_priv *priv, void *base, \
+			u32 offset, u32 cleared, u32 sleep_us, u32 timeout_us);
+	bool 	(*check_interface_support)(int port, phy_interface_t interface);
 };
 
 struct gswip_pce_table_entry {

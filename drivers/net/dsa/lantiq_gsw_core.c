@@ -1195,32 +1195,16 @@ static void gswip_phylink_validate(struct dsa_switch *ds, int port,
 				   struct phylink_link_state *state)
 {
 	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
-
-	switch (port) {
-	case 0:
-	case 1:
-		if (!phy_interface_mode_is_rgmii(state->interface) &&
-		    state->interface != PHY_INTERFACE_MODE_MII &&
-		    state->interface != PHY_INTERFACE_MODE_REVMII &&
-		    state->interface != PHY_INTERFACE_MODE_RMII)
-			goto unsupported;
-		break;
-	case 2:
-	case 3:
-	case 4:
-		if (state->interface != PHY_INTERFACE_MODE_INTERNAL)
-			goto unsupported;
-		break;
-	case 5:
-		if (!phy_interface_mode_is_rgmii(state->interface) &&
-		    state->interface != PHY_INTERFACE_MODE_INTERNAL)
-			goto unsupported;
-		break;
-	default:
+	struct gswip_priv *priv = ds->priv;
+	
+	if (port >= priv->hw_info->max_ports) {
 		bitmap_zero(supported, __ETHTOOL_LINK_MODE_MASK_NBITS);
 		dev_err(ds->dev, "Unsupported port: %i\n", port);
 		return;
 	}
+
+	if (!priv->ops->check_interface_support(port, state->interface))
+		goto unsupported;
 
 	/* Allow all the expected bits */
 	phylink_set(mask, Autoneg);

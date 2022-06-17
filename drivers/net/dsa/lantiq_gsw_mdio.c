@@ -15,7 +15,7 @@
 
 #include "lantiq_gsw.h"
 
-#define RUN_MDIO_COMM_TESTS 		(1)
+#define RUN_MDIO_COMM_TESTS 		(0)
 #if RUN_MDIO_COMM_TESTS
 #include <net/dsa.h>
 #endif
@@ -150,10 +150,36 @@ static void gsw_mdio_write(struct gswip_priv *priv, void *base, \
 	mutex_unlock(&mdio->bus->mdio_lock);
 }
 
+static bool gsw_mdio_check_interface_support(int port, phy_interface_t interface)
+{
+	switch (port) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+		if (interface != PHY_INTERFACE_MODE_INTERNAL)
+			return false;
+		break;
+	case 4:
+		if (interface != PHY_INTERFACE_MODE_SGMII)
+			return false;
+		break;
+	case 5:
+		if (!phy_interface_mode_is_rgmii(interface))
+			return false;
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
 static const struct gsw_ops gsw_mdio_ops = {
-	.read = gsw_mdio_read,
-	.write = gsw_mdio_write,
-	.poll_timeout = gsw_mdio_poll_timeout,
+	.read 				= gsw_mdio_read,
+	.write 				= gsw_mdio_write,
+	.poll_timeout 			= gsw_mdio_poll_timeout,
+	.check_interface_support 	= gsw_mdio_check_interface_support,
 };
 
 /*-------------------------------------------------------------------------*/
@@ -181,7 +207,7 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	struct mdio_device *mdio;
 	u32 reg_addr, reg_addr_2, reg_addr_3, \
 		i, val, tbar, expected_tbar, \
-		original_val, mask, err;
+		mask, err;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 
