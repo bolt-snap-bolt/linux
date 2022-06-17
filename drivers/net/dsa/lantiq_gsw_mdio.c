@@ -24,7 +24,7 @@
 #define TARGET_BASE_ADDRESS_REG 	(31)
 #define GSW_REG_BASE_OFFSET_SWITCH 	(0xE000)
 #define GSW_REG_BASE_OFFSET_MDIO 	(0xF400)
-#define GSW_REG_BASE_OFFSET_MII 	(0x0000)
+#define GSW_REG_BASE_OFFSET_UNUSED 	(0x0000)
 #define GSW_REG_MII_CFG5		(0xF100)
 #define GSW_REG_MII_PCDU5		(0xF101)
 
@@ -77,16 +77,27 @@ static u32 gsw_mdio_calculate_reg_addr(struct gswip_priv *priv, \
 {
 	if (base == priv->gswip) {
 		if (offset == GSWIP_SWRES)
-			// SWRES is at mdio base on MaxLinear parts
+			/* SWRES is at mdio base on MaxLinear parts */
 			return (u32)priv->mdio + offset;
 		else
 			return (u32)base + offset;
-	} else if (base == priv->mii) {
+	} else if (base == priv->mdio) {
+		return (u32)base + offset;
+	} else {
+		/* covers base = priv->mii, equivalent to base = 0x00 */
 		switch (offset) {
 		case GSWIP_MII_CFGp(5):
 			return GSW_REG_MII_CFG5;
 		case GSWIP_MII_PCDU5:
 			return GSW_REG_MII_PCDU5;
+		case GSWIP_MII_PCDU0:
+		case GSWIP_MII_PCDU1:
+			/* gsw_mdio_check_interface_support() prevents
+			 * ports other than 5 from being configured as RGMII,
+			 * which in turn should prevents the core driver logic
+			 * from ever attempting to set these PCDU0/1 registers,
+			 * as they are RGMII-specific.
+			 */
 		default:
 			/* None of the other MII base registers referred to by
 			* the core driver logic exist on MaxLinear parts.
@@ -94,23 +105,24 @@ static u32 gsw_mdio_calculate_reg_addr(struct gswip_priv *priv, \
 			*/
 			return 0;
 		}
-	} else { //(base == priv->mdio)
-		return (u32)base + offset;
 	} 
 }
 
 static u32 gsw_mdio_read(struct gswip_priv *priv, void *base, u32 offset)
 {
 	struct mdio_device *mdio;
-	u32 reg_addr, tbar, val;
+	u32 reg_addr, tbar;
+	u32 val = 0;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
-	mutex_lock(&mdio->bus->mdio_lock);
-	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
-	val = gsw_mdio_read_actual(mdio, (reg_addr - tbar));
-	mutex_unlock(&mdio->bus->mdio_lock);
+	if (reg_addr != 0) {
+		mutex_lock(&mdio->bus->mdio_lock);
+		tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+		val = gsw_mdio_read_actual(mdio, (reg_addr - tbar));
+		mutex_unlock(&mdio->bus->mdio_lock);
+	}
 
 	return val;
 }
@@ -120,17 +132,19 @@ static int gsw_mdio_poll_timeout(struct gswip_priv *priv, void *base, \
 {
 	struct mdio_device *mdio;
 	u32 reg_addr, tbar, val;
-	int retval;
+	int retval = -ENXIO;
 
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
-	mutex_lock(&mdio->bus->mdio_lock);
-	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
-	retval = read_poll_timeout(gsw_mdio_read_actual, val, \
-				(val & cleared) == 0, sleep_us, timeout_us, \
-				false, mdio, (reg_addr - tbar));
-	mutex_unlock(&mdio->bus->mdio_lock);
+	if (reg_addr != 0) {
+		mutex_lock(&mdio->bus->mdio_lock);
+		tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+		retval = read_poll_timeout(gsw_mdio_read_actual, val, \
+					(val & cleared) == 0, sleep_us, timeout_us, \
+					false, mdio, (reg_addr - tbar));
+		mutex_unlock(&mdio->bus->mdio_lock);
+	}
 
 	return retval;
 }
@@ -144,10 +158,12 @@ static void gsw_mdio_write(struct gswip_priv *priv, void *base, \
 	mdio = ((struct gsw_mdio *)dev_get_drvdata(priv->dev))->mdio_dev;
 	reg_addr = gsw_mdio_calculate_reg_addr(priv, base, offset);
 
-	mutex_lock(&mdio->bus->mdio_lock);
-	tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
-	gsw_mdio_write_actual(mdio, (reg_addr - tbar), val);
-	mutex_unlock(&mdio->bus->mdio_lock);
+	if (reg_addr != 0) {
+		mutex_lock(&mdio->bus->mdio_lock);
+		tbar = gsw_mdio_check_write_tbar(mdio, reg_addr);
+		gsw_mdio_write_actual(mdio, (reg_addr - tbar), val);
+		mutex_unlock(&mdio->bus->mdio_lock);
+	}
 }
 
 static bool gsw_mdio_check_interface_support(int port, phy_interface_t interface)
@@ -416,7 +432,7 @@ static int gsw_mdio_probe(struct mdio_device *mdiodev)
 	mdio_data->common.ops = &gsw_mdio_ops;
 	mdio_data->common.gswip = (void*)GSW_REG_BASE_OFFSET_SWITCH;
 	mdio_data->common.mdio = (void*)GSW_REG_BASE_OFFSET_MDIO;
-	mdio_data->common.mii = (void*)GSW_REG_BASE_OFFSET_MII;
+	mdio_data->common.mii = (void*)GSW_REG_BASE_OFFSET_UNUSED;
 
 	err = gsw_core_probe(&mdio_data->common, dev);
 	if (err)
