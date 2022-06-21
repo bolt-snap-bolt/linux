@@ -208,16 +208,14 @@ static const struct gsw_ops gsw_mdio_ops = {
 #define GSW_REG_OFFSET_GPIO2_PUDEN	(0x1397) // 0xF397 = priv->gswip + 0x1397
 #define GSW_REG_OFFSET_MSPI_DIN45	(0x151A) // 0xF51A = priv->gswip + 0x151A
 
-#define MDIO_PHY_REG_CTRL		(0x00)
 #define MDIO_PHY_REG_FWV		(0x1E)
-// Expected PHY FW version determined experimentally (i.e. by reading)
+/* Expected PHY FW version determined experimentally (i.e. by reading) */
 #define MDIO_PHY_EXPECTED_FWV		(0x8548)
-// For unknown reason (part of DSA bring-up?), the port has been powered
-// down at this point, so the expected CTRL register value is the datasheet's
-// listed reset value (0x9040) with the RST bit (b15) de-asserted and the
-// PD bit (b11) asserted (0x1840)
-#define MDIO_PHY_EXPECTED_CTRL		(0x1840)
-#define MDIO_PHY_CTRL_ISOLATION_MODE	(0x0400)
+
+#define MDIO_PHY_REG_LED_CTRL		(0x1B)
+#define MDIO_PHY_LED_CTRL_RESET_VAL	(0x0F00)
+/* disable normal LED functionality, manually switch LEDS on */
+#define MDIO_PHY_LED_CTRL_MANUAL_ON	(0x000F)
 static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 {
 	struct mdio_device *mdio;
@@ -381,32 +379,31 @@ static bool gsw_mdio_comm_tests(struct gswip_priv *priv)
 	// compound test for internal MDIO bus:
 	// 	perform read-modify-write-read on PHY control register
 	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
-						0, MDIO_PHY_REG_CTRL);
-	if (val != MDIO_PHY_EXPECTED_CTRL) {
+						0, MDIO_PHY_REG_LED_CTRL);
+	if (val != MDIO_PHY_LED_CTRL_RESET_VAL) {
 		printk("!RCC: ERROR w/r PHY0 CTRL reg: read 0x%X", val);
 		return false;
 	}
-	// enable isolation mode
-	val |= MDIO_PHY_CTRL_ISOLATION_MODE;
-	printk("!RCC: WRITING 0x%X", val);
+	
+	val = MDIO_PHY_LED_CTRL_MANUAL_ON;
 	err = priv->ds->slave_mii_bus->write(priv->ds->slave_mii_bus, \
-						0, MDIO_PHY_REG_CTRL, val);
+						0, MDIO_PHY_REG_LED_CTRL, val);
 	if (err) {
 		printk("!RCC: ERROR w/r PHY0 CTRL reg: write err:%d", err);
 		return false;
 	}
 	val = priv->ds->slave_mii_bus->read(priv->ds->slave_mii_bus, \
-						1, MDIO_PHY_REG_CTRL);
+						0, MDIO_PHY_REG_LED_CTRL);
 	// check that it stuck
-	if (val != (MDIO_PHY_EXPECTED_CTRL | MDIO_PHY_CTRL_ISOLATION_MODE))
+	if (val != MDIO_PHY_LED_CTRL_MANUAL_ON)
 	{
 		printk("!RCC: ERROR w/r PHY0 CTRL reg: read-back 0x%X", val);
 		return false;
 	}
 	// write original value back
-	val = MDIO_PHY_EXPECTED_CTRL;
+	val = MDIO_PHY_LED_CTRL_RESET_VAL;
 	err = priv->ds->slave_mii_bus->write(priv->ds->slave_mii_bus, \
-						0, MDIO_PHY_REG_CTRL, val);
+						0, MDIO_PHY_REG_LED_CTRL, val);
 	if (err) {
 		printk("!RCC: ERROR w/r PHY0 CTRL reg: write-back err:%d", err);
 		return false;
