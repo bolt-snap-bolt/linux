@@ -80,6 +80,12 @@ config NET_DSA_TAG_EDSA
 	  Say Y or M if you want to enable support for tagging frames for the
 	  Marvell switches which use EtherType DSA headers.
 
+config NET_DSA_TAG_MAXLINEAR
+	tristate "Tag driver for MaxLinear GSW switches"
+	help
+	  Say Y or M if you want to enable support for tagging frames for the
+	  MaxLinear GSW switches.
+
 config NET_DSA_TAG_MTK
 	tristate "Tag driver for Mediatek switches"
 	help
