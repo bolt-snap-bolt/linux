@@ -25,13 +25,29 @@ config NET_DSA_LOOP
 
 source "drivers/net/dsa/hirschmann/Kconfig"
 
-config NET_DSA_LANTIQ_GSWIP
-	tristate "Lantiq / Intel GSWIP"
-	depends on HAS_IOMEM
-	select NET_DSA_TAG_GSWIP
+config NET_DSA_LANTIQ_GSW
+	tristate
+	depends on NET_DSA
+	help
+	  This enables support for Lantiq / Intel / MaxLinear GSW
+	  gigabit ethernet switch parts
+
+config NET_DSA_LANTIQ_GSW_PLATFORM
+	tristate "Lantiq / Intel GSWIP internal SoC ethernet switch support"
+	depends on HAS_IOMEM && NET_DSA
+	select NET_DSA_LANTIQ_GSW
 	help
 	  This enables support for the Lantiq / Intel GSWIP 2.1 found in
 	  the xrx200 / VR9 SoC.
+
+config NET_DSA_LANTIQ_GSW_MDIO
+	tristate "MaxLinear GSW120/125/140 ethernet switch support in MDIO managed mode"
+	depends on NET_DSA
+	select NET_DSA_LANTIQ_GSW
+	select NET_DSA_TAG_MAXLINEAR
+	help
+	  This enables support for external MaxLinear GSW120, GSW125,
+	  and GSW140 switch parts in MDIO managed mode.
 
 config NET_DSA_MT7530
 	tristate "MediaTek MT753x and MT7621 Ethernet switch support"
